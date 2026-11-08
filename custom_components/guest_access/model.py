@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -54,12 +54,17 @@ class Window:
     def next_change(self, moment: datetime) -> datetime:
         """The next start or end of the range after that moment, on any day."""
         local = dt_util.as_local(moment)
+        # Compared in UTC: in the hour repeated when clocks go back, wall times
+        # of one time zone would compare wrong; both passes of it are candidates
         candidates = (
-            datetime.combine(local.date() + timedelta(days=offset), clock, tzinfo=local.tzinfo)
+            datetime.combine(
+                local.date() + timedelta(days=offset), clock.replace(fold=fold), local.tzinfo
+            ).astimezone(UTC)
             for offset in range(3)
             for clock in (self.start, self.end)
+            for fold in (0, 1)
         )
-        return min(candidate for candidate in candidates if candidate > local)
+        return min(candidate for candidate in candidates if candidate > moment)
 
     def as_dict(self) -> dict[str, Any]:
         """The window as JSON."""

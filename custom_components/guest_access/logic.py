@@ -96,9 +96,13 @@ def _check_counting(guest: Guest, presence: Presence, now: datetime) -> list[Rai
     if presence.visit_ends is not None and now >= presence.visit_ends and not presence.time_up:
         presence.time_up = True
         raised.append(Raised(guest.id, EVENT_TIME_UP, {"visit_ends": _iso(presence.visit_ends)}))
-    if not guest.approval.valid(now) and not presence.approval_expired:
+    valid = guest.approval.valid(now)
+    if not valid and not presence.approval_expired:
         presence.approval_expired = True
         raised.append(Raised(guest.id, EVENT_APPROVAL_EXPIRED, guest.approval.as_dict()))
+    elif valid:
+        # The time window opened again: the next close is a new expiry
+        presence.approval_expired = False
     return raised
 
 
@@ -124,8 +128,9 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         return [_arrive(guest, presence, now), *_check_counting(guest, presence, now)]
     raised = []
     if presence.resume_until is not None and not resuming:
-        # Not back after a restart: the guest left in the meantime
-        raised.append(_leave(guest, presence, now))
+        # Not back after a restart: the guest left in the meantime, at the
+        # latest when Home Assistant started; the grace time counts from there
+        raised.append(_leave(guest, presence, presence.resume_until - RESUME_WINDOW))
     if (
         guest.approval.kind is ApprovalKind.ONCE
         and presence.away_since is not None
@@ -150,10 +155,17 @@ def counting_guests(data: AccessData) -> list[Guest]:
 
 
 def free_rooms(data: AccessData) -> frozenset[str]:
-    """The lockable rooms the guests who count may enter together."""
+    """The lockable rooms the guests who count may enter together.
+
+    Guests waiting to resume after a restart keep their rooms, so their own
+    rooms do not turn into locked ones while their trackers come back.
+    """
     configured = frozenset(room.area_id for room in data.settings.rooms)
     free: set[str] = set()
-    for guest in counting_guests(data):
+    for guest in data.guests.values():
+        presence = data.presence_of(guest.id)
+        if not (presence.counting or presence.resume_until is not None):
+            continue
         if guest.all_rooms:
             return configured
         free.update(guest.rooms)

@@ -25,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry) 
     async_register_websocket(hass)
     await async_register_panel(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    engine.async_begin()
     return True
 
 

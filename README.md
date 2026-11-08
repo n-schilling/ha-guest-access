@@ -42,7 +42,7 @@ When the visit time of a guest runs out, or the approval ends (its end passes or
 
 ### Room lock
 
-Rooms are configured once on the entry: each lockable room is a Home Assistant area with exactly one door contact (`binary_sensor`), so names follow the area registry. The lock starts when guests count and no resident is home, given as a list of `person` entities on the entry. A room is locked while its door is closed; a room whose door is open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more.
+Rooms are configured once on the entry: each lockable room is a Home Assistant area with exactly one door contact (`binary_sensor`), so names follow the area registry. A room that stops being lockable is removed from every guest. The lock starts when guests count and no resident is home, given as a list of `person` entities on the entry. A room is locked while its door is closed, and only a change from closed to open is an opening (a contact that returns from unavailable while the door is open is not); guests waiting to resume after a restart keep their rooms free; a room whose door is open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more.
 
 ### What Home Assistant gets
 

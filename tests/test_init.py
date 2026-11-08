@@ -233,3 +233,65 @@ async def test_new_guest_gets_entities(hass: HomeAssistant, entry: MockConfigEnt
     assert state(hass, "binary_sensor.ben_counts") == STATE_OFF
     assert attr(hass, "event.ben_activity", "event_type") == "approval_changed"
     assert engine.area_name("gone") == "gone"
+
+
+async def test_door_contact_back_from_unavailable(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """A contact reconnecting while the door is open is no opening."""
+    hass.states.async_set(TRACKER, "home")
+    hass.states.async_set(DOOR, "unavailable")
+    await hass.async_block_till_done()
+    hass.states.async_set(DOOR, "on")
+    await hass.async_block_till_done()
+    assert state(hass, VIOLATION) == STATE_UNKNOWN
+
+
+async def test_own_room_free_after_restart(
+    hass: HomeAssistant, entry: MockConfigEntry, bedroom: str
+) -> None:
+    """A guest's own room raises nothing while the tracker is not back yet."""
+    from dataclasses import replace
+
+    engine = engine_of(entry)
+    engine.async_save_guest(replace(engine.data.guests["anna"], rooms=(bedroom,)))
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass.states.async_set(TRACKER, "unavailable")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    hass.states.async_set(DOOR, "on")
+    await hass.async_block_till_done()
+    assert state(hass, VIOLATION) == STATE_UNKNOWN
+
+
+async def test_event_at_start_reaches_entity(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_storage: dict[str, Any]
+) -> None:
+    """A once approval that ended while Home Assistant was down raises its event."""
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    data = hass_storage[STORAGE_KEY]["data"]
+    data["guests"][0]["approval"] = {
+        "kind": "once",
+        "until": "2099-01-01T00:00:00+00:00",
+        "window": None,
+    }
+    data["presence"] = {"anna": {"counting": False, "away_since": "2026-01-01T00:00:00+00:00"}}
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert attr(hass, ACTIVITY, "event_type") == "approval_changed"
+    assert attr(hass, ACTIVITY, "reason") == "visit_over"
+
+
+async def test_attribute_change_not_evaluated(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A tracker's position update without a state change decides nothing."""
+    from unittest.mock import patch
+
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    engine = engine_of(entry)
+    with patch.object(engine, "_evaluate") as evaluate:
+        hass.states.async_set(TRACKER, "home", {"latitude": 1.0})
+        await hass.async_block_till_done()
+    evaluate.assert_not_called()

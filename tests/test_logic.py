@@ -171,7 +171,8 @@ def test_restart_not_back() -> None:
     assert types(evaluate(data, seen(), end)) == ["left"]
     presence = data.presence["a"]
     assert presence.resume_until is None
-    assert presence.away_since == end
+    # The grace time counts from the restart, not from the end of the resume window
+    assert presence.away_since == T0
 
 
 def test_room_lock() -> None:
@@ -234,3 +235,30 @@ def test_guest_status() -> None:
     assert guest_status(Presence(resume_until=T0), True) is GuestStatus.RESUMING
     assert guest_status(Presence(), True) is GuestStatus.NOT_APPROVED
     assert guest_status(Presence(), False) is GuestStatus.AWAY
+
+
+def test_resuming_guest_keeps_rooms() -> None:
+    """During the resume window a guest's own rooms stay free."""
+    data = make(guest("a", rooms=("bedroom",)))
+    evaluate(data, seen("a"), T0)
+    prepare_restart(data, T0)
+    evaluate(data, seen(), T0 + timedelta(minutes=1))
+    assert data.lock.active
+    assert free_rooms(data) == frozenset({"bedroom"})
+    assert locked_rooms(data) == frozenset({"kids"})
+
+
+def test_window_reopens_clears_expiry() -> None:
+    """A guest home overnight counts again normally when the window opens."""
+    today = dt_util.as_local(T0)
+    window = Window(frozenset(range(7)), time(8), time(20))
+    data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, window), visit_minutes=None))
+    morning = datetime.combine(today.date(), time(9), tzinfo=today.tzinfo)
+    evaluate(data, seen("a"), morning)
+    assert types(evaluate(data, seen("a"), morning + timedelta(hours=12))) == ["approval_expired"]
+    assert guest_status(data.presence["a"], True) is GuestStatus.APPROVAL_EXPIRED
+    evaluate(data, seen("a"), morning + timedelta(days=1))
+    assert guest_status(data.presence["a"], True) is GuestStatus.COUNTING
+    assert types(evaluate(data, seen("a"), morning + timedelta(days=1, hours=12))) == [
+        "approval_expired"
+    ]

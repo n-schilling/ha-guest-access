@@ -196,3 +196,29 @@ async def test_subscription_survives_reload(
     while event is None or not event["guests"][0]["state"]["counting"]:
         event = (await client.receive_json())["event"]
     assert event["guests"][0]["state"]["counting"]
+
+
+async def test_removed_room_leaves_guests(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_ws_client: WebSocketGenerator, bedroom: str
+) -> None:
+    """A room no longer lockable is dropped from the guests, so they stay savable."""
+    engine: GuestEngine = entry.runtime_data
+    client = await hass_ws_client(hass)
+    anna = engine.data.guests["anna"]
+    await client.send_json_auto_id(
+        {
+            **GUEST,
+            "guest_id": "anna",
+            "name": anna.name,
+            "trackers": list(anna.trackers),
+            "approval": {"kind": "permanent"},
+            "rooms": [bedroom],
+        }
+    )
+    assert (await client.receive_json())["success"]
+    assert engine.data.guests["anna"].rooms == (bedroom,)
+    await client.send_json_auto_id(
+        {"type": "guest_access/save_settings", "residents": [RESIDENT], "rooms": []}
+    )
+    assert (await client.receive_json())["success"]
+    assert engine.data.guests["anna"].rooms == ()

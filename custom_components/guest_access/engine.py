@@ -10,7 +10,7 @@ from typing import Any
 import uuid
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_HOME, STATE_ON
+from homeassistant.const import STATE_HOME, STATE_OFF, STATE_ON
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar, device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -68,10 +68,14 @@ class GuestEngine:
     # Life cycle
 
     async def async_start(self) -> None:
-        """Load the stored state, carry visits over the restart and start watching."""
+        """Load the stored state and carry visits over the restart."""
         if (stored := await self._store.async_load()) is not None:
             self.data = AccessData.from_dict(stored)
         prepare_restart(self.data, dt_util.utcnow())
+
+    @callback
+    def async_begin(self) -> None:
+        """Start watching and evaluating, once the entities are there to raise events."""
         self._watch()
         self._evaluate()
 
@@ -142,13 +146,19 @@ class GuestEngine:
 
     @callback
     def _state_changed(self, event: Event[EventStateChangedData]) -> None:
+        new, old = event.data["new_state"], event.data["old_state"]
+        if new is not None and old is not None and new.state == old.state:
+            # Only attributes changed, as with a tracker's position: nothing to decide
+            return
         self._check_door(event)
         self._evaluate()
 
     def _check_door(self, event: Event[EventStateChangedData]) -> None:
         """Raise a room violation when the door of a locked room opens."""
         new, old = event.data["new_state"], event.data["old_state"]
-        if new is None or new.state != STATE_ON or (old is not None and old.state == STATE_ON):
+        # Only closed to open is an opening; a contact that comes back from
+        # unavailable or unknown while the door is open is not
+        if new is None or old is None or new.state != STATE_ON or old.state != STATE_OFF:
             return
         room = next(
             (room for room in self.data.settings.rooms if room.door == event.data["entity_id"]),
@@ -312,6 +322,12 @@ class GuestEngine:
     def async_save_settings(self, settings: Settings) -> None:
         """Change the residents and the lockable rooms."""
         self.data.settings = settings
+        configured = {room.area_id for room in settings.rooms}
+        for guest in list(self.data.guests.values()):
+            if not set(guest.rooms) <= configured:
+                # A room that is no longer lockable leaves the guests' rooms
+                kept = tuple(area for area in guest.rooms if area in configured)
+                self.data.guests[guest.id] = replace(guest, rooms=kept)
         self._watch()
         self._evaluate()
 

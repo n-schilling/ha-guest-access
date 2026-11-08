@@ -156,3 +156,13 @@ def test_round_trip() -> None:
     again = AccessData.from_dict(stored)
     assert again.as_dict() == stored
     assert AccessData.from_dict({}).as_dict() == AccessData().as_dict()
+
+
+async def test_window_next_change_when_clocks_go_back(hass: HomeAssistant) -> None:
+    """In the repeated hour the next end is still ahead, not behind."""
+    await hass.config.async_set_time_zone("Europe/Berlin")
+    window = Window(frozenset(range(7)), time(1), time(2, 30))
+    # 2026-10-25 02:10 CET, the second pass of the hour, is 01:10 UTC
+    moment = datetime(2026, 10, 25, 1, 10, tzinfo=UTC)
+    assert window.contains(moment)
+    assert window.next_change(moment) == datetime(2026, 10, 25, 1, 30, tzinfo=UTC)
