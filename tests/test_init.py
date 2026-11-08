@@ -239,12 +239,52 @@ async def test_door_contact_back_from_unavailable(
     hass: HomeAssistant, entry: MockConfigEntry
 ) -> None:
     """A contact reconnecting while the door is open is no opening."""
+    hass.states.async_set(DOOR, "on")
+    await hass.async_block_till_done()
     hass.states.async_set(TRACKER, "home")
     hass.states.async_set(DOOR, "unavailable")
     await hass.async_block_till_done()
     hass.states.async_set(DOOR, "on")
     await hass.async_block_till_done()
     assert state(hass, VIOLATION) == STATE_UNKNOWN
+
+
+async def test_door_opened_while_unavailable(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A door closed before the outage and open after it was opened: a violation."""
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    hass.states.async_set(DOOR, "unavailable")
+    hass.states.async_set(DOOR, "on")
+    await hass.async_block_till_done()
+    assert attr(hass, VIOLATION, "event_type") == "opened"
+    # A contact that disappears raises nothing
+    first = state(hass, VIOLATION)
+    hass.states.async_remove(DOOR)
+    await hass.async_block_till_done()
+    assert state(hass, VIOLATION) == first
+
+
+async def test_locked_while_resuming(
+    hass: HomeAssistant, entry: MockConfigEntry, bedroom: str
+) -> None:
+    """A guest locked while waiting to resume frees no room any more."""
+    from dataclasses import replace
+
+    engine = engine_of(entry)
+    engine.async_save_guest(replace(engine.data.guests["anna"], rooms=(bedroom,)))
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass.states.async_set(TRACKER, "unavailable")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    engine = engine_of(entry)
+    engine.async_lock_guest("anna")
+    await hass.async_block_till_done()
+    assert engine.data.presence["anna"].resume_until is None
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert state(hass, COUNTS) == STATE_OFF
 
 
 async def test_own_room_free_after_restart(

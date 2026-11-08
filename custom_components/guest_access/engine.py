@@ -64,6 +64,8 @@ class GuestEngine:
         self._event_listeners: list[EventListener] = []
         self._unsub_states: CALLBACK_TYPE | None = None
         self._unsub_wake: CALLBACK_TYPE | None = None
+        # Door contact: its last real state, on or off
+        self._doors: dict[str, str] = {}
 
     # Life cycle
 
@@ -140,9 +142,17 @@ class GuestEngine:
         entities = {tracker for guest in self.data.guests.values() for tracker in guest.trackers}
         entities.update(settings.residents)
         entities.update(room.door for room in settings.rooms)
+        for room in settings.rooms:
+            if (current := self.hass.states.get(room.door)) is not None:
+                self._remember_door(room.door, current.state)
         self._unsub_states = async_track_state_change_event(
             self.hass, sorted(entities), self._state_changed
         )
+
+    def _remember_door(self, entity_id: str, state: str) -> None:
+        """Keep the last real state of a door; unavailable and unknown keep the one before."""
+        if state in (STATE_ON, STATE_OFF):
+            self._doors[entity_id] = state
 
     @callback
     def _state_changed(self, event: Event[EventStateChangedData]) -> None:
@@ -155,13 +165,19 @@ class GuestEngine:
 
     def _check_door(self, event: Event[EventStateChangedData]) -> None:
         """Raise a room violation when the door of a locked room opens."""
-        new, old = event.data["new_state"], event.data["old_state"]
-        # Only closed to open is an opening; a contact that comes back from
-        # unavailable or unknown while the door is open is not
-        if new is None or old is None or new.state != STATE_ON or old.state != STATE_OFF:
+        new = event.data["new_state"]
+        entity_id = event.data["entity_id"]
+        if new is None:
+            return
+        # An opening is closed to open against the last known real state, so a
+        # door opened while its contact was unavailable counts once it reports,
+        # and a contact that returns to the same open door does not
+        was = self._doors.get(entity_id)
+        self._remember_door(entity_id, new.state)
+        if new.state != STATE_ON or was != STATE_OFF:
             return
         room = next(
-            (room for room in self.data.settings.rooms if room.door == event.data["entity_id"]),
+            (room for room in self.data.settings.rooms if room.door == entity_id),
             None,
         )
         if room is None or room.area_id not in locked_rooms(self.data):

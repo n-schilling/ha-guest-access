@@ -262,3 +262,15 @@ def test_window_reopens_clears_expiry() -> None:
     assert types(evaluate(data, seen("a"), morning + timedelta(days=1, hours=12))) == [
         "approval_expired"
     ]
+
+
+def test_resuming_guest_locked() -> None:
+    """A guest locked while waiting to resume keeps no rooms and does not resume."""
+    data = make(guest("a", rooms=("bedroom",)))
+    evaluate(data, seen("a"), T0)
+    prepare_restart(data, T0)
+    data.guests["a"] = guest("a", rooms=("bedroom",), approval=Approval())
+    assert free_rooms(data) == frozenset()
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=1)) == []
+    assert data.presence["a"].resume_until is None
+    assert not data.presence["a"].counting

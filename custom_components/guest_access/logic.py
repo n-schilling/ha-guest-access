@@ -118,8 +118,11 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         if not home:
             return [_leave(guest, presence, now)]
         return _check_counting(guest, presence, now)
+    if presence.resume_until is not None and guest.approval.kind is ApprovalKind.OFF:
+        # Locked while waiting to resume: the visit is over, the rooms lock
+        presence.end_visit()
     resuming = presence.resume_until is not None and now < presence.resume_until
-    if home and resuming and guest.approval.kind is not ApprovalKind.OFF:
+    if home and resuming:
         # Back after a restart: the visit goes on, its end stays
         presence.counting = True
         presence.resume_until = None
@@ -164,7 +167,8 @@ def free_rooms(data: AccessData) -> frozenset[str]:
     free: set[str] = set()
     for guest in data.guests.values():
         presence = data.presence_of(guest.id)
-        if not (presence.counting or presence.resume_until is not None):
+        resuming = presence.resume_until is not None and guest.approval.kind is not ApprovalKind.OFF
+        if not (presence.counting or resuming):
             continue
         if guest.all_rooms:
             return configured
