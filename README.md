@@ -19,7 +19,7 @@ A guest is a profile with:
 | Approval | `off`, `once until <datetime>`, `permanent until <datetime>`, `permanent` |
 | Time window | optional for permanent approvals: weekdays and a time range in which the approval applies |
 | Grace time | once approvals only: how long all trackers may be away before the approval ends (default 15 min) |
-| Rooms | the living area always; bedroom and children's room each on top, or everything |
+| Rooms | the lockable rooms (see Room lock) the guest may enter on top of the unlockable ones, or everything |
 | Time per visit | 30, 60 (default) or 120 minutes or unlimited, counted from each arrival |
 
 ### When a guest counts
@@ -38,22 +38,30 @@ If only guests are home, their rooms add up, because an opened door cannot be to
 
 ### Expiry while the guest is home
 
-When the visit time of a guest runs out, or the approval ends (its end passes or its time window closes) while the guest is home, the guest keeps counting until they leave or are locked, and the integration raises `guest_access_time_up` or `guest_access_approval_expired` for that guest.
+When the visit time of a guest runs out, or the approval ends (its end passes or its time window closes) while the guest is home, the guest keeps counting until they leave or are locked, and the guest's event entity fires `time_up` or `approval_expired`.
 
 ### Room lock
 
-Rooms are configured once on the entry: name and the door contact (`binary_sensor`) of each lockable room. The lock starts when guests count and no resident is home, given as a list of `person` entities on the entry. A room is locked while its door is closed; a room whose door is open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more.
+Rooms are configured once on the entry: each lockable room is a Home Assistant area with exactly one door contact (`binary_sensor`), so names follow the area registry. The lock starts when guests count and no resident is home, given as a list of `person` entities on the entry. A room is locked while its door is closed; a room whose door is open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more.
 
 ### What Home Assistant gets
 
 | Kind | Entity or event | Purpose |
 |---|---|---|
-| Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
-| Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
-| Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms, earliest deadline | alarm automations read only this |
-| Events | `guest_access_arrived`, `guest_access_left`, `guest_access_room_violation`, `guest_access_time_up`, `guest_access_approval_expired`, `guest_access_approval_changed` | push, log and image series stay in automations |
+Each guest is a device with its entities.
 
-The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities or the events. No template is needed for that.
+| Kind | Entity | Purpose |
+|---|---|---|
+| Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
+| Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
+| Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` | push and log stay in automations |
+| Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
+| Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | alarm automations read only this |
+| Room lock | `event` "Room violation" with the type `opened`, carrying the area, the door and the guests who count | push, log and image series stay in automations |
+
+The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities. No template is needed for that.
+
+No entity changes an approval: Home Assistant cannot limit an entity to administrators, so approvals are changed only on the page.
 
 ### Page
 
