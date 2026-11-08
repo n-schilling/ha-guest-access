@@ -69,7 +69,11 @@ def test_arrive_time_up_leave() -> None:
     assert presence.counting
     assert types(evaluate(data, seen(), T0 + timedelta(minutes=70))) == ["left"]
     assert not presence.counting
+    assert presence.away_since == T0 + timedelta(minutes=70)
+    # Away longer than the grace time: the visit is forgotten
+    assert evaluate(data, seen(), T0 + timedelta(minutes=85)) == []
     assert presence.away_since is None
+    assert presence.arrived is None
 
 
 def test_no_approval_no_count() -> None:
@@ -122,8 +126,10 @@ def test_once_grace() -> None:
     evaluate(data, seen(), T0 + timedelta(minutes=5))
     assert data.presence["a"].away_since == T0 + timedelta(minutes=5)
     assert next_wake(data, T0 + timedelta(minutes=5)) == T0 + timedelta(minutes=20)
-    # Back within the grace time: a new arrival
-    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=10))) == ["arrived"]
+    # Back within the grace time: the same visit goes on, no new arrival
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=10)) == []
+    assert data.presence["a"].counting
+    assert data.presence["a"].visit_ends == T0 + timedelta(minutes=60)
     assert data.presence["a"].away_since is None
     evaluate(data, seen(), T0 + timedelta(minutes=12))
     assert evaluate(data, seen(), T0 + timedelta(minutes=20)) == []
@@ -273,4 +279,45 @@ def test_resuming_guest_locked() -> None:
     assert free_rooms(data) == frozenset()
     assert evaluate(data, seen("a"), T0 + timedelta(minutes=1)) == []
     assert data.presence["a"].resume_until is None
+    assert not data.presence["a"].counting
+
+
+def test_return_within_grace_keeps_visit() -> None:
+    """A flapping tracker neither restarts the time nor hides its end."""
+    data = make(guest())
+    evaluate(data, seen("a"), T0)
+    for minute in range(10, 70, 10):
+        assert types(evaluate(data, seen(), T0 + timedelta(minutes=minute))) == ["left"]
+        raised = types(evaluate(data, seen("a"), T0 + timedelta(minutes=minute + 1)))
+        assert "arrived" not in raised
+    presence = data.presence["a"]
+    assert presence.visit_ends == T0 + timedelta(minutes=60)
+    assert presence.time_up
+
+
+def test_return_after_grace_is_new_visit() -> None:
+    """Back after the grace time: a new arrival with a new end."""
+    data = make(guest(grace_minutes=15))
+    evaluate(data, seen("a"), T0)
+    evaluate(data, seen(), T0 + timedelta(minutes=5))
+    later = T0 + timedelta(minutes=30)
+    assert types(evaluate(data, seen("a"), later)) == ["arrived"]
+    assert data.presence["a"].visit_ends == later + timedelta(minutes=60)
+
+
+def test_no_return_when_locked_or_invalid() -> None:
+    """Locked while away, or the approval no longer valid: no continuation."""
+    data = make(guest())
+    evaluate(data, seen("a"), T0)
+    evaluate(data, seen(), T0 + timedelta(minutes=5))
+    data.guests["a"] = guest(approval=Approval())
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=6)) == []
+    assert not data.presence["a"].counting
+    assert data.presence["a"].away_since is None
+
+    until = T0 + timedelta(minutes=8)
+    data = make(guest(approval=Approval(ApprovalKind.UNTIL, until)))
+    evaluate(data, seen("a"), T0)
+    evaluate(data, seen(), T0 + timedelta(minutes=5))
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=10)) == []
     assert not data.presence["a"].counting

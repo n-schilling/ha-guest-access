@@ -83,10 +83,11 @@ def _arrive(guest: Guest, presence: Presence, now: datetime) -> Raised:
     return Raised(guest.id, EVENT_ARRIVED, {"visit_ends": _iso(presence.visit_ends)})
 
 
-def _leave(guest: Guest, presence: Presence, now: datetime) -> Raised:
-    presence.end_visit()
-    if guest.approval.kind is ApprovalKind.ONCE:
-        presence.away_since = now
+def _leave(guest: Guest, presence: Presence, at: datetime) -> Raised:
+    """The guest no longer counts; the visit is kept for a return within the grace time."""
+    presence.counting = False
+    presence.resume_until = None
+    presence.away_since = at
     return Raised(guest.id, EVENT_LEFT)
 
 
@@ -108,47 +109,58 @@ def _check_counting(guest: Guest, presence: Presence, now: datetime) -> list[Rai
 
 def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -> list[Raised]:
     presence = data.presence_of(guest.id)
-    if home:
-        presence.away_since = None
+    locked = guest.approval.kind is ApprovalKind.OFF
     if presence.counting:
-        if guest.approval.kind is ApprovalKind.OFF:
+        if locked:
             # Locked by an administrator: no longer counts, wherever the guest is
             presence.end_visit()
+            presence.away_since = None
             return []
         if not home:
             return [_leave(guest, presence, now)]
         return _check_counting(guest, presence, now)
-    if presence.resume_until is not None and guest.approval.kind is ApprovalKind.OFF:
-        # Locked while waiting to resume: the visit is over, the rooms lock
+    if locked and (presence.resume_until is not None or presence.away_since is not None):
+        # Locked while away or waiting to resume: the visit is over, the rooms lock
         presence.end_visit()
+        presence.away_since = None
     resuming = presence.resume_until is not None and now < presence.resume_until
     if home and resuming:
         # Back after a restart: the visit goes on, its end stays
         presence.counting = True
         presence.resume_until = None
         return _check_counting(guest, presence, now)
+    in_grace = (
+        presence.away_since is not None
+        and now < presence.away_since + guest.grace
+        and presence.arrived is not None
+    )
     if home and guest.approval.valid(now):
+        if in_grace:
+            # Back within the grace time: the same visit goes on, its end stays
+            presence.counting = True
+            presence.away_since = None
+            return _check_counting(guest, presence, now)
+        presence.away_since = None
         return [_arrive(guest, presence, now), *_check_counting(guest, presence, now)]
     raised = []
     if presence.resume_until is not None and not resuming:
         # Not back after a restart: the guest left in the meantime, at the
         # latest when Home Assistant started; the grace time counts from there
         raised.append(_leave(guest, presence, presence.resume_until - RESUME_WINDOW))
-    if (
-        guest.approval.kind is ApprovalKind.ONCE
-        and presence.away_since is not None
-        and now >= presence.away_since + guest.grace
-    ):
-        # One visit, and it is over
-        data.guests[guest.id] = replace(guest, approval=Approval())
+    if presence.away_since is not None and now >= presence.away_since + guest.grace:
+        # Away longer than the grace time: the visit is over
+        presence.end_visit()
         presence.away_since = None
-        raised.append(
-            Raised(
-                guest.id,
-                EVENT_APPROVAL_CHANGED,
-                {**Approval().as_dict(), "reason": "visit_over"},
+        if guest.approval.kind is ApprovalKind.ONCE:
+            # One visit, and it is over
+            data.guests[guest.id] = replace(guest, approval=Approval())
+            raised.append(
+                Raised(
+                    guest.id,
+                    EVENT_APPROVAL_CHANGED,
+                    {**Approval().as_dict(), "reason": "visit_over"},
+                )
             )
-        )
     return raised
 
 
@@ -219,7 +231,7 @@ def next_wake(data: AccessData, now: datetime) -> datetime | None:
             candidates.append(presence.visit_ends)
         if presence.resume_until is not None:
             candidates.append(presence.resume_until)
-        if guest.approval.kind is ApprovalKind.ONCE and presence.away_since is not None:
+        if presence.away_since is not None:
             candidates.append(presence.away_since + guest.grace)
     return min((moment for moment in candidates if moment > now), default=None)
 

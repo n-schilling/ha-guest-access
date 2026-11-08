@@ -31,7 +31,7 @@ if (!customElements.get("guest-access-panel")) {
       useWindow: "Only in a time window",
       from: "From",
       to: "To",
-      grace: "Grace time (min) after leaving",
+      grace: "Grace time (min): a return within it continues the visit",
       rooms: "Rooms on top of the living area",
       allRooms: "All rooms",
       noRooms: "No lockable rooms set yet.",
@@ -83,7 +83,7 @@ if (!customElements.get("guest-access-panel")) {
       useWindow: "Nur in einem Zeitfenster",
       from: "Von",
       to: "Bis",
-      grace: "Kulanzzeit (min) nach dem Gehen",
+      grace: "Kulanzzeit (min): wer in ihr zurückkommt, setzt den Besuch fort",
       rooms: "Räume zusätzlich zum Wohnbereich",
       allRooms: "Alle Räume",
       noRooms: "Noch keine sperrbaren Räume festgelegt.",
@@ -454,7 +454,7 @@ if (!customElements.get("guest-access-panel")) {
                 ${esc(this._t("to"))} <input id="end" type="time" value="${esc(f.end)}"></div>
             </div>
           </div>
-          <div ${f.approval === "once" ? "" : "hidden"}>
+          <div ${f.approval === "off" ? "hidden" : ""}>
             <label>${esc(this._t("grace"))}</label>
             <input id="grace" type="number" min="1" max="240" value="${esc(f.grace)}">
           </div>

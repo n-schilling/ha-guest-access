@@ -18,9 +18,9 @@ A guest is a profile with:
 | Trackers | one or more `device_tracker` entities of any integration (a Bluetooth beacon, a phone on Wi-Fi); the guest is home when one of them is `home`; `unknown` and `unavailable` never count |
 | Approval | `off`, `once until <datetime>`, `permanent until <datetime>`, `permanent` |
 | Time window | optional for permanent approvals: weekdays and a time range in which the approval applies |
-| Grace time | once approvals only: how long all trackers may be away before the approval ends (default 15 min) |
+| Grace time | how long all trackers may be away and the visit still goes on when one returns; for a once approval also when it ends (default 15 min) |
 | Rooms | the lockable rooms (see Room lock) the guest may enter on top of the unlockable ones, or everything |
-| Time per visit | 30, 60 (default) or 120 minutes or unlimited, counted from each arrival |
+| Time per visit | 30, 60 (default) or 120 minutes or unlimited, counted from the arrival that starts the visit |
 
 ### When a guest counts
 
@@ -29,6 +29,8 @@ A guest counts while all of these hold:
 1. the approval is not `off` and its end, if any, has not passed,
 2. the time window, if any, contains the current time,
 3. one of the guest's trackers is `home`.
+
+When no tracker is home any more, the guest stops counting at once (`left`). A return within the grace time continues the same visit: its end stays, no new `arrived` is raised. A return later is a new visit with a new end. Locking the guest or an approval that is no longer valid ends the visit as well.
 
 A `once` approval is one visit: when no tracker of the guest has been home for the grace time, the approval switches to `off`. A guest who returns later needs a new approval.
 
