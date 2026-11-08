@@ -1,0 +1,64 @@
+name: CI
+# scripts/check.sh runs the same checks locally; keep the two in step.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  schedule:
+    # Weekly, so a new Home Assistant release that breaks hassfest shows up
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Ruff
+        run: |
+          pip install "$(grep '^ruff==' requirements_test.txt)"
+          ruff check .
+          ruff format --check .
+      - name: Changelog has the version
+        run: .github/scripts/changelog-section.sh CHANGELOG.md "$(jq -r '.version' custom_components/guest_access/manifest.json)" > /dev/null
+      - name: Translations match strings.json
+        run: diff custom_components/guest_access/strings.json custom_components/guest_access/translations/en.json
+
+  hassfest:
+    name: Hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master 2026-10-26
+
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Install
+        run: pip install -r requirements_test.txt
+      - name: Strict typing
+        run: mypy custom_components
+      - name: Test
+        # Silver of the quality scale asks for more than 95 %
+        run: pytest -v --cov=custom_components.guest_access --cov-report=term-missing --cov-fail-under=95

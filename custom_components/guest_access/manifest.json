@@ -1,0 +1,15 @@
+{
+  "domain": "guest_access",
+  "name": "Guest Access",
+  "codeowners": [
+    "@n-schilling"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/n-schilling/ha-guest-access",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/n-schilling/ha-guest-access/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

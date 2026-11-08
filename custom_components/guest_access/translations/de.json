@@ -1,0 +1,12 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Guest Access einrichten. Gäste, ihre Tracker und Freigaben werden danach auf der Seite Guest Access verwaltet."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Guest Access ist bereits eingerichtet."
+    }
+  }
+}

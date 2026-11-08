@@ -1,0 +1,12 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Set up Guest Access. Guests, their trackers and approvals are managed on the Guest Access page afterwards."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Guest Access is already set up."
+    }
+  }
+}
