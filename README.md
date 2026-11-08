@@ -4,7 +4,7 @@ A Home Assistant integration that decides which guests count as present for an a
 
 
 
-Status: scaffold. The entry loads and unloads; everything under Design is still to be built.
+Status: 0.1.0 in development, not deployed yet.
 
 ## Design
 
@@ -69,7 +69,7 @@ A sidebar page for administrators only: the list of guests with their state, a f
 
 ### State
 
-Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`.
+Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`; when that happens within ten minutes, the visit goes on with its end and without a new `arrived`, otherwise the guest has left.
 
 ## Development
 

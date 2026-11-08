@@ -8,5 +8,60 @@
     "abort": {
       "single_instance_allowed": "Guest Access ist bereits eingerichtet."
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "counts": {
+        "name": "Zählt"
+      },
+      "guests_home": {
+        "name": "Gäste zuhause",
+        "state_attributes": {
+          "guests": {
+            "name": "Gäste"
+          },
+          "free_rooms": {
+            "name": "Freie Räume"
+          },
+          "locked_rooms": {
+            "name": "Gesperrte Räume"
+          }
+        }
+      },
+      "only_guests_home": {
+        "name": "Nur Gäste daheim"
+      }
+    },
+    "event": {
+      "activity": {
+        "name": "Aktivität",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "arrived": "Angekommen",
+              "left": "Gegangen",
+              "time_up": "Zeit um",
+              "approval_expired": "Freigabe abgelaufen",
+              "approval_changed": "Freigabe geändert"
+            }
+          }
+        }
+      },
+      "room_violation": {
+        "name": "Raumverstoß",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "opened": "Tür geöffnet"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "visit_ends": {
+        "name": "Besuchsende"
+      }
+    }
   }
 }

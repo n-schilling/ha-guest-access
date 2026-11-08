@@ -1,0 +1,37 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "counts": {
+        "default": "mdi:account-off",
+        "state": {
+          "on": "mdi:account-check"
+        }
+      },
+      "guests_home": {
+        "default": "mdi:account-group-outline",
+        "state": {
+          "on": "mdi:account-group"
+        }
+      },
+      "only_guests_home": {
+        "default": "mdi:home-outline",
+        "state": {
+          "on": "mdi:home-account"
+        }
+      }
+    },
+    "event": {
+      "activity": {
+        "default": "mdi:account-clock"
+      },
+      "room_violation": {
+        "default": "mdi:door-open"
+      }
+    },
+    "sensor": {
+      "visit_ends": {
+        "default": "mdi:timer-sand"
+      }
+    }
+  }
+}

@@ -1,10 +1,19 @@
 {
   "domain": "guest_access",
   "name": "Guest Access",
+  "after_dependencies": [
+    "frontend",
+    "panel_custom",
+    "person"
+  ],
   "codeowners": [
     "@n-schilling"
   ],
   "config_flow": true,
+  "dependencies": [
+    "http",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/n-schilling/ha-guest-access",
   "integration_type": "service",
   "iot_class": "calculated",
