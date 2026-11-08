@@ -34,9 +34,11 @@ A `once` approval is one visit: when no tracker of the guest has been home for t
 
 ### Several guests
 
-If only guests are home, their rights add up, because an opened door cannot be told apart by guest: the free rooms are the union of the rooms of all guests who count.
+If only guests are home, their rooms add up, because an opened door cannot be told apart by guest: the free rooms are the union of the rooms of all guests who count. Time is per guest.
 
-Open (proposals, not decided): the visit time ends with the latest deadline of the guests who count; an approval that ends while the guest is home keeps the guest counting until they leave, and raises the same event as an expired visit time.
+### Expiry while the guest is home
+
+When the visit time of a guest runs out, or the approval ends (its end passes or its time window closes) while the guest is home, the guest keeps counting until they leave or are locked, and the integration raises `guest_access_time_up` or `guest_access_approval_expired` for that guest.
 
 ### Room lock
 
@@ -48,7 +50,7 @@ Rooms are configured once on the entry: name and the door contact (`binary_senso
 |---|---|---|
 | Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms, earliest deadline | alarm automations read only this |
-| Events | `guest_access_arrived`, `guest_access_left`, `guest_access_room_violation`, `guest_access_time_up`, `guest_access_approval_changed` | push, log and image series stay in automations |
+| Events | `guest_access_arrived`, `guest_access_left`, `guest_access_room_violation`, `guest_access_time_up`, `guest_access_approval_expired`, `guest_access_approval_changed` | push, log and image series stay in automations |
 
 The integration notifies nobody and never arms or disarms anything. Reactions stay in the alarm system's automations.
 
