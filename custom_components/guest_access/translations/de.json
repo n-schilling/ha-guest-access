@@ -74,5 +74,23 @@
         "name": "Besuchsende"
       }
     }
+  },
+  "issues": {
+    "missing_tracker": {
+      "title": "Tracker von {guest} fehlt",
+      "description": "{guest} nutzt `{entity}`, das es nicht mehr gibt. Über diesen Tracker kann der Gast nicht zählen. Ändere die Tracker von {guest} auf der Seite Guest Access."
+    },
+    "missing_resident": {
+      "title": "Bewohner fehlt",
+      "description": "Den Bewohner `{entity}` gibt es nicht mehr. Guest Access sieht diese Person nicht heimkommen, hält womöglich nur Gäste für daheim und sperrt Räume. Ändere die Bewohner auf der Seite Guest Access."
+    },
+    "missing_door": {
+      "title": "Türkontakt von {room} fehlt",
+      "description": "Den Türkontakt `{entity}` von {room} gibt es nicht mehr. Die Raumsperre sieht diese Tür nicht; wird sie geöffnet, gibt es keinen Raumverstoß. Wähle auf der Seite Guest Access einen anderen Türkontakt."
+    },
+    "missing_area": {
+      "title": "Sperrbarer Raum fehlt",
+      "description": "Den Bereich `{area}` mit dem Türkontakt `{entity}` gibt es nicht mehr, der Raum lässt sich nicht sperren. Entferne ihn auf der Seite Guest Access oder wähle einen anderen Bereich."
+    }
   }
 }

@@ -74,5 +74,23 @@
         "name": "Visit ends"
       }
     }
+  },
+  "issues": {
+    "missing_tracker": {
+      "title": "Tracker of {guest} is missing",
+      "description": "{guest} uses `{entity}`, which no longer exists. The guest cannot count through this tracker. Change the trackers of {guest} on the Guest Access page."
+    },
+    "missing_resident": {
+      "title": "Resident is missing",
+      "description": "The resident `{entity}` no longer exists. Guest Access does not see this person come home, so it may think only guests are home and lock rooms. Change the residents on the Guest Access page."
+    },
+    "missing_door": {
+      "title": "Door contact of {room} is missing",
+      "description": "The door contact `{entity}` of {room} no longer exists. The room lock cannot see this door, so opening it raises no room violation. Choose another door contact on the Guest Access page."
+    },
+    "missing_area": {
+      "title": "Lockable room is missing",
+      "description": "The area `{area}` with the door contact `{entity}` no longer exists, so the room cannot be locked. Remove it or choose another area on the Guest Access page."
+    }
   }
 }

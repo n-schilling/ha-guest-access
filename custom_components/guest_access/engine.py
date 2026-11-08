@@ -11,13 +11,21 @@ import uuid
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_HOME, STATE_OFF, STATE_ON
-from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers import area_registry as ar, device_registry as dr
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Context,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    callback,
+)
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
     async_track_state_change_event,
 )
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -29,6 +37,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
+from .issues import async_update_issues
 from .logic import (
     GuestStatus,
     Observed,
@@ -45,8 +54,9 @@ from .model import AccessData, Approval, Guest, Settings
 
 _LOGGER = logging.getLogger(__name__)
 
-# Guest id (None for the room lock), event type, event data
-type EventListener = Callable[[str | None, str, dict[str, Any]], None]
+# Guest id (None for the room lock), event type, event data, and the context of
+# the administrator's change when one caused it
+type EventListener = Callable[[str | None, str, dict[str, Any], Context | None], None]
 
 SAVE_DELAY = 1
 
@@ -64,6 +74,8 @@ class GuestEngine:
         self._event_listeners: list[EventListener] = []
         self._unsub_states: CALLBACK_TYPE | None = None
         self._unsub_wake: CALLBACK_TYPE | None = None
+        self._unsub_other: list[CALLBACK_TYPE] = []
+        self._issues_active = False
         # Door contact: its last real state, on or off
         self._doors: dict[str, str] = {}
 
@@ -77,9 +89,34 @@ class GuestEngine:
 
     @callback
     def async_begin(self) -> None:
-        """Start watching and evaluating, once the entities are there to raise events."""
+        """Start watching and evaluating, once the entities are there to raise events.
+
+        Repairs are checked only once Home Assistant has started, when every
+        integration had the chance to create its entities.
+        """
         self._watch()
         self._evaluate()
+
+        @callback
+        def _registry_changed(_event: Event[Any]) -> None:
+            self._check_issues()
+
+        @callback
+        def _started(_hass: HomeAssistant) -> None:
+            self._issues_active = True
+            self._check_issues()
+
+        self._unsub_other.extend(
+            [
+                self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, _registry_changed),
+                self.hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, _registry_changed),
+                async_at_started(self.hass, _started),
+            ]
+        )
+
+    def _check_issues(self) -> None:
+        if self._issues_active:
+            async_update_issues(self.hass, self.data)
 
     async def async_stop(self) -> None:
         """Stop watching and save the state, so the next start reads it."""
@@ -89,6 +126,9 @@ class GuestEngine:
         if self._unsub_wake is not None:
             self._unsub_wake()
             self._unsub_wake = None
+        while self._unsub_other:
+            self._unsub_other.pop()()
+        self._issues_active = False
         await self._store.async_save(self.data.as_dict())
 
     # Listeners
@@ -110,9 +150,15 @@ class GuestEngine:
             listener()
         async_dispatcher_send(self.hass, SIGNAL_CHANGED)
 
-    def _raise(self, guest_id: str | None, event_type: str, data: dict[str, Any]) -> None:
+    def _raise(
+        self,
+        guest_id: str | None,
+        event_type: str,
+        data: dict[str, Any],
+        context: Context | None = None,
+    ) -> None:
         for listener in list(self._event_listeners):
-            listener(guest_id, event_type, data)
+            listener(guest_id, event_type, data, context)
 
     # Observation
 
@@ -204,6 +250,7 @@ class GuestEngine:
         self._schedule(now)
         if self.data.as_dict() != before:
             self._save()
+        self._check_issues()
         self._notify()
         for item in raised:
             self._raise(item.guest_id, item.event_type, item.data)
@@ -289,8 +336,10 @@ class GuestEngine:
         return uuid.uuid4().hex
 
     @callback
-    def async_save_guest(self, guest: Guest) -> None:
-        """Add or change a guest."""
+    def async_save_guest(
+        self, guest: Guest, context: Context | None = None, by: str | None = None
+    ) -> None:
+        """Add or change a guest; context and name of the administrator go with the event."""
         old = self.data.guests.get(guest.id)
         self.data.guests[guest.id] = guest
         presence = self.data.presence_of(guest.id)
@@ -311,13 +360,20 @@ class GuestEngine:
         self._watch()
         self._evaluate()
         if old is None or old.approval != guest.approval:
-            self._raise(guest.id, EVENT_APPROVAL_CHANGED, guest.approval.as_dict())
+            self._raise(
+                guest.id,
+                EVENT_APPROVAL_CHANGED,
+                {**guest.approval.as_dict(), "reason": "changed", "by": by},
+                context,
+            )
 
     @callback
-    def async_lock_guest(self, guest_id: str) -> None:
+    def async_lock_guest(
+        self, guest_id: str, context: Context | None = None, by: str | None = None
+    ) -> None:
         """Take a guest's approval away; the guest no longer counts."""
         guest = self.data.guests[guest_id]
-        self.async_save_guest(replace(guest, approval=Approval()))
+        self.async_save_guest(replace(guest, approval=Approval()), context, by)
 
     @callback
     def async_delete_guest(self, guest_id: str) -> None:

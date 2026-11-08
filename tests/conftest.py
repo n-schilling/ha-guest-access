@@ -39,7 +39,7 @@ def stored(bedroom: str) -> dict[str, Any]:
                 "id": "anna",
                 "name": "Anna",
                 "trackers": [TRACKER],
-                "approval": {"kind": "permanent", "until": None, "window": None},
+                "approval": {"kind": "permanent", "until": None, "windows": []},
                 "rooms": [],
                 "all_rooms": False,
                 "visit_minutes": 60,

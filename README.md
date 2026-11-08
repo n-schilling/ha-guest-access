@@ -17,7 +17,7 @@ A guest is a profile with:
 | Name | shown on the page and in events |
 | Trackers | one or more `device_tracker` entities of any integration (a Bluetooth beacon, a phone on Wi-Fi); the guest is home when one of them is `home`; `unknown` and `unavailable` never count |
 | Approval | `off`, `once until <datetime>`, `permanent until <datetime>`, `permanent` |
-| Time window | optional for permanent approvals: weekdays and a time range in which the approval applies |
+| Time windows | optional for permanent approvals (with or without an end): any number of windows, each weekdays and a time range; the approval applies within any of them, e.g. Mon–Fri 08:00–18:00 and Sat 10:00–14:00 |
 | Grace time | how long all trackers may be away and the visit still goes on when one returns; for a once approval also when it ends (default 15 min) |
 | Rooms | the lockable rooms (see Room lock) the guest may enter on top of the unlockable ones, or everything |
 | Time per visit | 30, 60 (default) or 120 minutes or unlimited, counted from the arrival that starts the visit |
@@ -57,7 +57,7 @@ Each guest is a device with its entities.
 | Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
 | Per guest | `sensor` "<guest> status" (enum: `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`) | dashboards show it as it is, no template |
 | Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
-| Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` | push and log stay in automations |
+| Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | alarm automations read only this |
 | Room lock | `event` "Room violation" with the type `opened`, carrying the area, the door and the guests who count | push, log and image series stay in automations |
@@ -65,6 +65,10 @@ Each guest is a device with its entities.
 The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities. No template is needed for that.
 
 No entity changes an approval: Home Assistant cannot limit an entity to administrators, so approvals are changed only on the page.
+
+### Repairs
+
+Once Home Assistant has started, Guest Access opens a repair issue for every tracker, resident or door contact that is neither registered nor has a state, and for every lockable room whose area is gone; doors and areas as errors, because the room lock cannot see them. An issue closes by itself when the entity or area is back or no longer used.
 
 ### Page
 

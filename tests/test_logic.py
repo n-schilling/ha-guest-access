@@ -101,11 +101,11 @@ def test_window_closes_while_home() -> None:
     """A window that closes counts as an expiry; arriving outside it does not count."""
     today = dt_util.as_local(T0)
     window = Window(frozenset({today.weekday()}), time(0), time(23, 59))
-    data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, window)))
+    data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, (window,))))
     late = datetime.combine(today.date(), time(23, 59, 30), tzinfo=today.tzinfo)
     assert types(evaluate(data, seen("a"), T0)) == ["arrived"]
     assert "approval_expired" in types(evaluate(data, seen("a"), late))
-    data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, window)))
+    data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, (window,))))
     assert evaluate(data, seen("a"), late) == []
 
 
@@ -135,7 +135,13 @@ def test_once_grace() -> None:
     assert evaluate(data, seen(), T0 + timedelta(minutes=20)) == []
     raised = evaluate(data, seen(), T0 + timedelta(minutes=27))
     assert types(raised) == ["approval_changed"]
-    assert raised[0].data == {"kind": "off", "until": None, "window": None, "reason": "visit_over"}
+    assert raised[0].data == {
+        "kind": "off",
+        "until": None,
+        "windows": [],
+        "reason": "visit_over",
+        "by": None,
+    }
     assert data.guests["a"].approval == Approval()
     assert evaluate(data, seen("a"), T0 + timedelta(minutes=30)) == []
 
@@ -258,7 +264,9 @@ def test_window_reopens_clears_expiry() -> None:
     """A guest home overnight counts again normally when the window opens."""
     today = dt_util.as_local(T0)
     window = Window(frozenset(range(7)), time(8), time(20))
-    data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, window), visit_minutes=None))
+    data = make(
+        guest(approval=Approval(ApprovalKind.PERMANENT, None, (window,)), visit_minutes=None)
+    )
     morning = datetime.combine(today.date(), time(9), tzinfo=today.tzinfo)
     evaluate(data, seen("a"), morning)
     assert types(evaluate(data, seen("a"), morning + timedelta(hours=12))) == ["approval_expired"]

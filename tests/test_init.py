@@ -315,7 +315,7 @@ async def test_event_at_start_reaches_entity(
     data["guests"][0]["approval"] = {
         "kind": "once",
         "until": "2099-01-01T00:00:00+00:00",
-        "window": None,
+        "windows": [],
     }
     data["presence"] = {"anna": {"counting": False, "away_since": "2026-01-01T00:00:00+00:00"}}
     assert await hass.config_entries.async_setup(entry.entry_id)

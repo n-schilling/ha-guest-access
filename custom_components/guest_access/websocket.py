@@ -45,7 +45,7 @@ WINDOW = {
 APPROVAL = {
     probatio.Required("kind"): probatio.In([kind.value for kind in ApprovalKind]),
     probatio.Optional("until"): probatio.Any(None, cv.datetime),
-    probatio.Optional("window"): probatio.Any(None, WINDOW),
+    probatio.Optional("windows", default=[]): [WINDOW],
 }
 ROOM = {probatio.Required("area_id"): cv.string, probatio.Required("door"): cv.entity_id}
 
@@ -132,7 +132,6 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
         if unknown := set(msg["rooms"]) - configured:
             raise ValueError(f"not a lockable room: {', '.join(sorted(unknown))}")
         raw = msg["approval"]
-        window = raw.get("window")
         guest = Guest(
             id=guest_id or engine.new_guest_id(),
             name=msg["name"].strip(),
@@ -140,9 +139,10 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
             approval=Approval(
                 ApprovalKind(raw["kind"]),
                 _aware(raw.get("until")),
-                None
-                if window is None
-                else Window(frozenset(window["weekdays"]), window["start"], window["end"]),
+                tuple(
+                    Window(frozenset(window["weekdays"]), window["start"], window["end"])
+                    for window in raw["windows"]
+                ),
             ),
             rooms=tuple(dict.fromkeys(msg["rooms"])),
             all_rooms=msg["all_rooms"],
@@ -152,7 +152,7 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
     except ValueError as err:
         connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))
         return
-    engine.async_save_guest(guest)
+    engine.async_save_guest(guest, connection.context(msg), connection.user.name)
     connection.send_result(msg["id"], {"guest_id": guest.id})
 
 
@@ -184,7 +184,7 @@ def ws_lock_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
     if engine.guest(msg["guest_id"]) is None:
         connection.send_error(msg["id"], ERR_NOT_FOUND, f"no guest {msg['guest_id']}")
         return
-    engine.async_lock_guest(msg["guest_id"])
+    engine.async_lock_guest(msg["guest_id"], connection.context(msg), connection.user.name)
     connection.send_result(msg["id"])
 
 

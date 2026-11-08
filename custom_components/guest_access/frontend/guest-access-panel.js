@@ -28,7 +28,8 @@ if (!customElements.get("guest-access-panel")) {
       kind_permanent: "Permanent",
       until: "Until",
       expired: "expired",
-      useWindow: "Only in a time window",
+      windows: "Time windows (none: at any time)",
+      addWindow: "Add time window",
       from: "From",
       to: "To",
       grace: "Grace time (min): a return within it continues the visit",
@@ -80,7 +81,8 @@ if (!customElements.get("guest-access-panel")) {
       kind_permanent: "Dauerhaft",
       until: "Bis",
       expired: "abgelaufen",
-      useWindow: "Nur in einem Zeitfenster",
+      windows: "Zeitfenster (keins: jederzeit)",
+      addWindow: "Zeitfenster hinzufügen",
       from: "Von",
       to: "Bis",
       grace: "Kulanzzeit (min): wer in ihr zurückkommt, setzt den Besuch fort",
@@ -157,6 +159,7 @@ if (!customElements.get("guest-access-panel")) {
       border: 1px solid var(--divider-color); background: var(--input-fill-color, var(--card-background-color));
       color: var(--primary-text-color); max-width: 100%; }
     input[type=checkbox] { padding: 0; }
+    .window { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
     .row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
     .row input:not([type=checkbox]), .row select { flex: 1; min-width: 160px; }
     .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
@@ -271,10 +274,10 @@ if (!customElements.get("guest-access-panel")) {
       const a = guest.approval;
       let text = this._t(`kind_${a.kind}`);
       if (a.until) text += ` ${this._time(a.until)}`;
-      if (a.window) {
-        const days = a.window.weekdays.map((d) => this._t("weekdays")[d]).join(", ");
-        text += ` · ${days} ${a.window.start}–${a.window.end}`;
-      }
+      const windows = a.windows.map(
+        (w) => `${w.weekdays.map((d) => this._t("weekdays")[d]).join(", ")} ${w.start}–${w.end}`,
+      );
+      if (windows.length) text += ` · ${windows.join("; ")}`;
       if (a.kind !== "off" && !guest.state.approval_valid) text += ` (${this._t("expired")})`;
       return text;
     }
@@ -363,10 +366,7 @@ if (!customElements.get("guest-access-panel")) {
         trackers: guest ? [...guest.trackers] : [""],
         approval: a?.kind ?? "once",
         until: localInput(a?.until),
-        useWindow: Boolean(a?.window),
-        weekdays: a?.window?.weekdays ?? [0, 1, 2, 3, 4],
-        start: a?.window?.start ?? "08:00",
-        end: a?.window?.end ?? "18:00",
+        windows: (a?.windows ?? []).map((w) => ({ ...w, weekdays: [...w.weekdays] })),
         grace: guest?.grace_minutes ?? 15,
         rooms: guest ? [...guest.rooms] : [],
         allRooms: guest?.all_rooms ?? false,
@@ -443,16 +443,22 @@ if (!customElements.get("guest-access-panel")) {
             <input id="until" type="datetime-local" value="${esc(f.until)}" ${withEnd ? "" : "hidden"}>
           </div>
           <div ${withWindow ? "" : "hidden"}>
-            <label class="inline"><input type="checkbox" id="use-window" ${f.useWindow ? "checked" : ""}>${esc(this._t("useWindow"))}</label>
-            <div ${f.useWindow ? "" : "hidden"}>
-              <div>${this._t("weekdays")
-                .map(
-                  (d, i) => `<label class="inline"><input type="checkbox" data-day="${i}" ${f.weekdays.includes(i) ? "checked" : ""}>${esc(d)}</label>`,
-                )
-                .join("")}</div>
-              <div class="row">${esc(this._t("from"))} <input id="start" type="time" value="${esc(f.start)}">
-                ${esc(this._t("to"))} <input id="end" type="time" value="${esc(f.end)}"></div>
-            </div>
+            <label>${esc(this._t("windows"))}</label>
+            ${f.windows
+              .map(
+                (w, n) => `<div class="window">
+                  <div>${this._t("weekdays")
+                    .map(
+                      (d, i) => `<label class="inline"><input type="checkbox" data-window="${n}" data-day="${i}" ${w.weekdays.includes(i) ? "checked" : ""}>${esc(d)}</label>`,
+                    )
+                    .join("")}</div>
+                  <div class="row">${esc(this._t("from"))} <input type="time" data-window="${n}" data-field="start" value="${esc(w.start)}">
+                    ${esc(this._t("to"))} <input type="time" data-window="${n}" data-field="end" value="${esc(w.end)}">
+                    <button data-remove-window="${n}">${esc(this._t("remove"))}</button></div>
+                </div>`,
+              )
+              .join("")}
+            <button id="add-window">${esc(this._t("addWindow"))}</button>
           </div>
           <div ${f.approval === "off" ? "hidden" : ""}>
             <label>${esc(this._t("grace"))}</label>
@@ -503,18 +509,26 @@ if (!customElements.get("guest-access-panel")) {
         this._renderForm();
       });
       $("#until").addEventListener("input", (e) => (f.until = e.target.value));
-      $("#use-window").addEventListener("change", (e) => {
-        f.useWindow = e.target.checked;
-        this._renderForm();
-      });
       for (const box of host.querySelectorAll("[data-day]")) {
         box.addEventListener("change", () => {
+          const w = f.windows[Number(box.dataset.window)];
           const day = Number(box.dataset.day);
-          f.weekdays = box.checked ? [...f.weekdays, day].sort() : f.weekdays.filter((d) => d !== day);
+          w.weekdays = box.checked ? [...w.weekdays, day].sort() : w.weekdays.filter((d) => d !== day);
         });
       }
-      $("#start").addEventListener("input", (e) => (f.start = e.target.value));
-      $("#end").addEventListener("input", (e) => (f.end = e.target.value));
+      for (const input of host.querySelectorAll("[data-field]")) {
+        input.addEventListener("input", () => (f.windows[Number(input.dataset.window)][input.dataset.field] = input.value));
+      }
+      for (const button of host.querySelectorAll("[data-remove-window]")) {
+        button.addEventListener("click", () => {
+          f.windows.splice(Number(button.dataset.removeWindow), 1);
+          this._renderForm();
+        });
+      }
+      $("#add-window").addEventListener("click", () => {
+        f.windows.push({ weekdays: [0, 1, 2, 3, 4], start: "08:00", end: "18:00" });
+        this._renderForm();
+      });
       $("#grace").addEventListener("input", (e) => (f.grace = Number(e.target.value)));
       $("#all-rooms")?.addEventListener("change", (e) => {
         f.allRooms = e.target.checked;
@@ -535,7 +549,7 @@ if (!customElements.get("guest-access-panel")) {
     async _saveGuest() {
       const f = this._form;
       const withEnd = f.approval === "once" || f.approval === "until";
-      const withWindow = (f.approval === "until" || f.approval === "permanent") && f.useWindow;
+      const withWindow = f.approval === "until" || f.approval === "permanent";
       const message = {
         type: "guest_access/save_guest",
         name: f.name,
@@ -543,7 +557,7 @@ if (!customElements.get("guest-access-panel")) {
         approval: {
           kind: f.approval,
           until: withEnd && f.until ? new Date(f.until).toISOString() : null,
-          window: withWindow ? { weekdays: f.weekdays, start: f.start, end: f.end } : null,
+          windows: withWindow ? f.windows : [],
         },
         rooms: f.allRooms ? [] : f.rooms,
         all_rooms: f.allRooms,

@@ -70,22 +70,22 @@ UNTIL = datetime(2026, 12, 1, 11, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
-    ("kind", "until", "window"),
+    ("kind", "until", "windows"),
     [
-        (ApprovalKind.ONCE, None, None),
-        (ApprovalKind.UNTIL, None, None),
-        (ApprovalKind.OFF, UNTIL, None),
-        (ApprovalKind.PERMANENT, UNTIL, None),
-        (ApprovalKind.ONCE, UNTIL, Window(WEEKDAYS, time(8), time(9))),
-        (ApprovalKind.UNTIL, datetime(2026, 12, 1), None),
+        (ApprovalKind.ONCE, None, ()),
+        (ApprovalKind.UNTIL, None, ()),
+        (ApprovalKind.OFF, UNTIL, ()),
+        (ApprovalKind.PERMANENT, UNTIL, ()),
+        (ApprovalKind.ONCE, UNTIL, (Window(WEEKDAYS, time(8), time(9)),)),
+        (ApprovalKind.UNTIL, datetime(2026, 12, 1), ()),
     ],
 )
 def test_approval_invalid(
-    kind: ApprovalKind, until: datetime | None, window: Window | None
+    kind: ApprovalKind, until: datetime | None, windows: tuple[Window, ...]
 ) -> None:
     """Combinations the kinds do not allow are rejected."""
     with pytest.raises(ValueError):
-        Approval(kind, until, window)
+        Approval(kind, until, windows)
 
 
 async def test_approval_valid(hass: HomeAssistant) -> None:
@@ -100,7 +100,7 @@ async def test_approval_valid(hass: HomeAssistant) -> None:
     assert not until.valid(UNTIL)
     assert until.next_change(before) == UNTIL
     assert until.next_change(UNTIL) is None
-    windowed = Approval(ApprovalKind.PERMANENT, None, Window(WEEKDAYS, time(8), time(18)))
+    windowed = Approval(ApprovalKind.PERMANENT, None, (Window(WEEKDAYS, time(8), time(18)),))
     assert windowed.valid(local(hass, "2026-11-09T09:00"))
     assert not windowed.valid(local(hass, "2026-11-09T19:00"))
     assert windowed.next_change(local(hass, "2026-11-09T09:00")) == local(hass, "2026-11-09T18:00")
@@ -139,7 +139,7 @@ def test_round_trip() -> None:
                 "a",
                 "Anna",
                 ("device_tracker.a",),
-                Approval(ApprovalKind.UNTIL, UNTIL, Window(WEEKDAYS, time(8), time(18))),
+                Approval(ApprovalKind.UNTIL, UNTIL, (Window(WEEKDAYS, time(8), time(18)),)),
                 rooms=("bedroom",),
                 visit_minutes=None,
                 grace_minutes=20,
@@ -166,3 +166,17 @@ async def test_window_next_change_when_clocks_go_back(hass: HomeAssistant) -> No
     moment = datetime(2026, 10, 25, 1, 10, tzinfo=UTC)
     assert window.contains(moment)
     assert window.next_change(moment) == datetime(2026, 10, 25, 1, 30, tzinfo=UTC)
+
+
+async def test_approval_several_windows(hass: HomeAssistant) -> None:
+    """Several windows: the approval applies within any of them (Mon-Fri 8-18 and Sat 10-14)."""
+    approval = Approval(
+        ApprovalKind.PERMANENT,
+        None,
+        (Window(WEEKDAYS, time(8), time(18)), Window(frozenset({5}), time(10), time(14))),
+    )
+    assert approval.valid(local(hass, "2026-11-09T09:00"))
+    assert approval.valid(local(hass, "2026-11-14T11:00"))
+    assert not approval.valid(local(hass, "2026-11-14T15:00"))
+    assert not approval.valid(local(hass, "2026-11-15T11:00"))
+    assert approval.next_change(local(hass, "2026-11-14T11:00")) == local(hass, "2026-11-14T14:00")

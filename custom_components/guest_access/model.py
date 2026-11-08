@@ -86,11 +86,11 @@ class Window:
 
 @dataclass(frozen=True, slots=True)
 class Approval:
-    """Whether and when a guest counts."""
+    """Whether and when a guest counts; with time windows, only within one of them."""
 
     kind: ApprovalKind = ApprovalKind.OFF
     until: datetime | None = None
-    window: Window | None = None
+    windows: tuple[Window, ...] = ()
 
     def __post_init__(self) -> None:
         """Reject combinations the kinds do not allow."""
@@ -98,7 +98,7 @@ class Approval:
             raise ValueError(f"an approval {self.kind} needs an end")
         if self.kind in (ApprovalKind.OFF, ApprovalKind.PERMANENT) and self.until is not None:
             raise ValueError(f"an approval {self.kind} has no end")
-        if self.kind in (ApprovalKind.OFF, ApprovalKind.ONCE) and self.window is not None:
+        if self.kind in (ApprovalKind.OFF, ApprovalKind.ONCE) and self.windows:
             raise ValueError(f"an approval {self.kind} has no time window")
         if self.until is not None and self.until.tzinfo is None:
             raise ValueError("the end of an approval needs a time zone")
@@ -109,7 +109,7 @@ class Approval:
             return False
         if self.until is not None and moment >= self.until:
             return False
-        return self.window is None or self.window.contains(moment)
+        return not self.windows or any(window.contains(moment) for window in self.windows)
 
     def next_change(self, moment: datetime) -> datetime | None:
         """The next moment the approval may turn valid or invalid, or None."""
@@ -118,8 +118,7 @@ class Approval:
         candidates = []
         if self.until is not None and self.until > moment:
             candidates.append(self.until)
-        if self.window is not None:
-            candidates.append(self.window.next_change(moment))
+        candidates.extend(window.next_change(moment) for window in self.windows)
         return min(candidates, default=None)
 
     def as_dict(self) -> dict[str, Any]:
@@ -127,18 +126,17 @@ class Approval:
         return {
             "kind": self.kind.value,
             "until": None if self.until is None else self.until.isoformat(),
-            "window": None if self.window is None else self.window.as_dict(),
+            "windows": [window.as_dict() for window in self.windows],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Approval:
         """An approval from JSON."""
         until = data.get("until")
-        window = data.get("window")
         return cls(
             ApprovalKind(data["kind"]),
             None if until is None else datetime.fromisoformat(until),
-            None if window is None else Window.from_dict(window),
+            tuple(Window.from_dict(window) for window in data.get("windows", ())),
         )
 
 

@@ -158,7 +158,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
                 Raised(
                     guest.id,
                     EVENT_APPROVAL_CHANGED,
-                    {**Approval().as_dict(), "reason": "visit_over"},
+                    {**Approval().as_dict(), "reason": "visit_over", "by": None},
                 )
             )
     return raised

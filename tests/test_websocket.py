@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from homeassistant.core import HomeAssistant
@@ -18,7 +18,7 @@ GUEST = {
     "type": "guest_access/save_guest",
     "name": "Ben",
     "trackers": ["device_tracker.ben", "device_tracker.ben"],
-    "approval": {"kind": "until", "until": "2030-01-01T12:00:00", "window": None},
+    "approval": {"kind": "until", "until": "2030-01-01T12:00:00", "windows": []},
 }
 
 
@@ -69,7 +69,7 @@ async def test_save_lock_delete(
             "name": " Ben B ",
             "approval": {
                 "kind": "permanent",
-                "window": {"weekdays": [0, 1], "start": "08:00", "end": "18:00"},
+                "windows": [{"weekdays": [0, 1], "start": "08:00", "end": "18:00"}],
             },
             "rooms": [room],
             "visit_minutes": None,
@@ -80,7 +80,7 @@ async def test_save_lock_delete(
     ben = engine.data.guests[guest_id]
     assert ben.name == "Ben B"
     assert ben.rooms == (room,)
-    assert ben.approval.window is not None
+    assert len(ben.approval.windows) == 1
     assert ben.visit_minutes is None
 
     await client.send_json_auto_id({"type": "guest_access/lock_guest", "guest_id": guest_id})
@@ -222,3 +222,23 @@ async def test_removed_room_leaves_guests(
     )
     assert (await client.receive_json())["success"]
     assert engine.data.guests["anna"].rooms == ()
+
+
+async def test_approval_change_names_admin(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+    hass_admin_user: MockUser,
+) -> None:
+    """Who changed or locked an approval is in the event and its context."""
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "guest_access/lock_guest", "guest_id": "anna"})
+    assert (await client.receive_json())["success"]
+    await hass.async_block_till_done()
+    activity = hass.states.get("event.anna_activity")
+    assert activity is not None
+    assert activity.attributes["event_type"] == "approval_changed"
+    assert activity.attributes["kind"] == "off"
+    assert activity.attributes["reason"] == "changed"
+    assert activity.attributes["by"] == hass_admin_user.name
+    assert activity.context.user_id == hass_admin_user.id

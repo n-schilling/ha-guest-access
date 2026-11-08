@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.event import EventEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Context, HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -50,8 +50,17 @@ class GuestEvent(GuestEntity, EventEntity):
         """Only events change this entity."""
 
     @callback
-    def _event(self, guest_id: str | None, event_type: str, data: dict[str, Any]) -> None:
+    def _event(
+        self,
+        guest_id: str | None,
+        event_type: str,
+        data: dict[str, Any],
+        context: Context | None,
+    ) -> None:
         if guest_id == self.guest_id and event_type in GUEST_EVENT_TYPES:
+            if context is not None:
+                # The logbook shows the administrator who changed the approval
+                self.async_set_context(context)
             self._trigger_event(event_type, data)
             self.async_write_ha_state()
 
@@ -75,7 +84,13 @@ class RoomViolationEvent(HubEntity, EventEntity):
         """Only events change this entity."""
 
     @callback
-    def _event(self, guest_id: str | None, event_type: str, data: dict[str, Any]) -> None:
+    def _event(
+        self,
+        guest_id: str | None,
+        event_type: str,
+        data: dict[str, Any],
+        context: Context | None,
+    ) -> None:
         if guest_id is None and event_type == EVENT_OPENED:
             self._trigger_event(event_type, data)
             self.async_write_ha_state()
