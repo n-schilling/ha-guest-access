@@ -30,10 +30,12 @@ from .const import (
     STORAGE_VERSION,
 )
 from .logic import (
+    GuestStatus,
     Observed,
     counting_guests,
     evaluate,
     free_rooms,
+    guest_status,
     locked_rooms,
     next_wake,
     only_guests_home,
@@ -201,6 +203,12 @@ class GuestEngine:
         """A guest, or None when there is no such guest."""
         return self.data.guests.get(guest_id)
 
+    def status(self, guest_id: str) -> GuestStatus:
+        """The status of a guest."""
+        guest = self.data.guests[guest_id]
+        home = any(self._is(tracker, STATE_HOME) for tracker in guest.trackers)
+        return guest_status(self.data.presence_of(guest_id), home)
+
     @property
     def only_guests_home(self) -> bool:
         """Whether guests count and no resident is home."""
@@ -233,6 +241,7 @@ class GuestEngine:
                         **presence.as_dict(),
                         "home": observed.home.get(guest.id, False),
                         "approval_valid": guest.approval.valid(now),
+                        "status": guest_status(presence, observed.home.get(guest.id, False)).value,
                     },
                 }
             )

@@ -32,6 +32,7 @@ async def test_subscribe(
     first = (await client.receive_json())["event"]
     assert [guest["name"] for guest in first["guests"]] == ["Anna"]
     assert first["guests"][0]["state"]["counting"] is False
+    assert first["guests"][0]["state"]["status"] == "away"
     assert first["settings"]["residents"] == [RESIDENT]
     assert first["lock"]["active"] is False
 

@@ -23,6 +23,7 @@ COUNTS = "binary_sensor.anna_counts"
 GUESTS_HOME = "binary_sensor.guest_access_guests_home"
 ONLY_GUESTS = "binary_sensor.guest_access_only_guests_home"
 VISIT_ENDS = "sensor.anna_visit_ends"
+STATUS = "sensor.anna_status"
 ACTIVITY = "event.anna_activity"
 VIOLATION = "event.guest_access_room_violation"
 
@@ -54,6 +55,15 @@ async def test_setup_and_unload(hass: HomeAssistant, entry: MockConfigEntry) -> 
     assert state(hass, GUESTS_HOME) == STATE_OFF
     assert state(hass, ONLY_GUESTS) == STATE_OFF
     assert state(hass, VISIT_ENDS) == STATE_UNKNOWN
+    assert state(hass, STATUS) == "away"
+    assert attr(hass, STATUS, "options") == [
+        "counting",
+        "time_up",
+        "approval_expired",
+        "not_approved",
+        "resuming",
+        "away",
+    ]
     assert state(hass, ACTIVITY) == STATE_UNKNOWN
     assert state(hass, VIOLATION) == STATE_UNKNOWN
     assert PANEL_URL_PATH in hass.data[DATA_PANELS]
@@ -91,12 +101,14 @@ async def test_visit(
     assert state(hass, ONLY_GUESTS) == STATE_ON
     assert state(hass, VISIT_ENDS) != STATE_UNKNOWN
     assert attr(hass, ACTIVITY, "event_type") == "arrived"
+    assert state(hass, STATUS) == "counting"
 
     freezer.tick(timedelta(minutes=61))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert attr(hass, ACTIVITY, "event_type") == "time_up"
     assert state(hass, COUNTS) == STATE_ON
+    assert state(hass, STATUS) == "time_up"
 
     # A resident comes home: no longer only guests
     hass.states.async_set(RESIDENT, "home")
@@ -200,6 +212,7 @@ async def test_change_delete_guest(hass: HomeAssistant, entry: MockConfigEntry) 
     engine.async_lock_guest("anna")
     await hass.async_block_till_done()
     assert state(hass, COUNTS) == STATE_OFF
+    assert state(hass, STATUS) == "not_approved"
     assert attr(hass, ACTIVITY, "event_type") == "approval_changed"
     assert attr(hass, ACTIVITY, "kind") == "off"
 

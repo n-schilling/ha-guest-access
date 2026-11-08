@@ -59,6 +59,17 @@
       }
     },
     "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "counting": "Counts",
+          "time_up": "Time up",
+          "approval_expired": "Approval expired",
+          "not_approved": "Home without approval",
+          "resuming": "Waiting after restart",
+          "away": "Away"
+        }
+      },
       "visit_ends": {
         "name": "Visit ends"
       }

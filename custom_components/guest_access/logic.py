@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from .const import (
@@ -20,6 +21,22 @@ from .const import (
     RESUME_WINDOW,
 )
 from .model import AccessData, Approval, ApprovalKind, Guest, Lock, Presence
+
+
+class GuestStatus(StrEnum):
+    """What a guest's status sensor shows."""
+
+    # Counts, nothing has run out
+    COUNTING = "counting"
+    # Counts, the time per visit is up
+    TIME_UP = "time_up"
+    # Counts, the approval ended while the guest was home
+    APPROVAL_EXPIRED = "approval_expired"
+    # A tracker is home, but the approval does not let the guest count
+    NOT_APPROVED = "not_approved"
+    # After a restart: waiting for a tracker to continue the visit
+    RESUMING = "resuming"
+    AWAY = "away"
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,3 +206,18 @@ def next_wake(data: AccessData, now: datetime) -> datetime | None:
         if guest.approval.kind is ApprovalKind.ONCE and presence.away_since is not None:
             candidates.append(presence.away_since + guest.grace)
     return min((moment for moment in candidates if moment > now), default=None)
+
+
+def guest_status(presence: Presence, home: bool) -> GuestStatus:
+    """One state per guest that a dashboard shows as it is."""
+    if presence.counting:
+        if presence.approval_expired:
+            return GuestStatus.APPROVAL_EXPIRED
+        if presence.time_up:
+            return GuestStatus.TIME_UP
+        return GuestStatus.COUNTING
+    if presence.resume_until is not None:
+        return GuestStatus.RESUMING
+    if home:
+        return GuestStatus.NOT_APPROVED
+    return GuestStatus.AWAY

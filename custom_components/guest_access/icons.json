@@ -29,6 +29,17 @@
       }
     },
     "sensor": {
+      "status": {
+        "default": "mdi:account-question",
+        "state": {
+          "counting": "mdi:account-check",
+          "time_up": "mdi:account-clock",
+          "approval_expired": "mdi:account-alert",
+          "not_approved": "mdi:account-cancel",
+          "resuming": "mdi:account-sync",
+          "away": "mdi:account-off-outline"
+        }
+      },
       "visit_ends": {
         "default": "mdi:timer-sand"
       }

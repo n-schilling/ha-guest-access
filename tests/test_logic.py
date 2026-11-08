@@ -8,9 +8,11 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.guest_access.const import RESUME_WINDOW
 from custom_components.guest_access.logic import (
+    GuestStatus,
     Observed,
     evaluate,
     free_rooms,
+    guest_status,
     locked_rooms,
     next_wake,
     only_guests_home,
@@ -21,6 +23,7 @@ from custom_components.guest_access.model import (
     Approval,
     ApprovalKind,
     Guest,
+    Presence,
     Room,
     Settings,
     Window,
@@ -218,3 +221,16 @@ def test_next_wake_none() -> None:
     data = make(guest(visit_minutes=None))
     evaluate(data, seen("a"), T0)
     assert next_wake(data, T0) is None
+
+
+def test_guest_status() -> None:
+    """Expired approval before time up before counting; then resuming, home, away."""
+    presence = Presence(counting=True)
+    assert guest_status(presence, True) is GuestStatus.COUNTING
+    presence.time_up = True
+    assert guest_status(presence, True) is GuestStatus.TIME_UP
+    presence.approval_expired = True
+    assert guest_status(presence, True) is GuestStatus.APPROVAL_EXPIRED
+    assert guest_status(Presence(resume_until=T0), True) is GuestStatus.RESUMING
+    assert guest_status(Presence(), True) is GuestStatus.NOT_APPROVED
+    assert guest_status(Presence(), False) is GuestStatus.AWAY

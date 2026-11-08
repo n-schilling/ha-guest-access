@@ -59,6 +59,17 @@
       }
     },
     "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "counting": "Zählt",
+          "time_up": "Zeit um",
+          "approval_expired": "Freigabe abgelaufen",
+          "not_approved": "Daheim ohne Freigabe",
+          "resuming": "Wartet nach Neustart",
+          "away": "Weg"
+        }
+      },
       "visit_ends": {
         "name": "Besuchsende"
       }

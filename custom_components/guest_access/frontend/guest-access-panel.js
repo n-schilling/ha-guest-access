@@ -38,12 +38,13 @@ if (!customElements.get("guest-access-panel")) {
       visit: "Time per visit",
       unlimited: "unlimited",
       minutes: "{n} min",
-      counts: "Counts",
-      countsUntil: "Counts, visit ends {time}",
-      timeUp: "time is up",
-      homeNotCounting: "Home, does not count",
-      resuming: "Waiting after a restart",
-      away: "Away",
+      status_counting: "Counts",
+      status_time_up: "Time up",
+      status_approval_expired: "Approval expired",
+      status_not_approved: "Home without approval",
+      status_resuming: "Waiting after restart",
+      status_away: "Away",
+      visitEnds: "visit ends {time}",
       residents: "Residents",
       lockableRooms: "Lockable rooms",
       area: "Area",
@@ -89,12 +90,13 @@ if (!customElements.get("guest-access-panel")) {
       visit: "Dauer je Besuch",
       unlimited: "unbegrenzt",
       minutes: "{n} min",
-      counts: "Zählt",
-      countsUntil: "Zählt, Besuch endet {time}",
-      timeUp: "Zeit ist um",
-      homeNotCounting: "Daheim, zählt nicht",
-      resuming: "Wartet nach Neustart",
-      away: "Weg",
+      status_counting: "Zählt",
+      status_time_up: "Zeit um",
+      status_approval_expired: "Freigabe abgelaufen",
+      status_not_approved: "Daheim ohne Freigabe",
+      status_resuming: "Wartet nach Neustart",
+      status_away: "Weg",
+      visitEnds: "Besuch endet {time}",
       residents: "Bewohner",
       lockableRooms: "Sperrbare Räume",
       area: "Bereich",
@@ -277,18 +279,18 @@ if (!customElements.get("guest-access-panel")) {
       return text;
     }
 
+    // The status comes from the integration, as on the guest's status sensor
     _stateText(guest) {
       const s = guest.state;
-      if (s.counting) {
-        let text = s.visit_ends
-          ? this._t("countsUntil", { time: this._time(s.visit_ends) })
-          : this._t("counts");
-        if (s.time_up) text += ` · ${this._t("timeUp")}`;
-        return [text, s.time_up || s.approval_expired ? "warn" : "on"];
-      }
-      if (s.resume_until) return [this._t("resuming"), "muted"];
-      if (s.home) return [this._t("homeNotCounting"), "warn"];
-      return [this._t("away"), "muted"];
+      const cls = {
+        counting: "on",
+        time_up: "warn",
+        approval_expired: "warn",
+        not_approved: "warn",
+      }[s.status] ?? "muted";
+      let text = this._t(`status_${s.status}`);
+      if (s.counting && s.visit_ends) text += ` · ${this._t("visitEnds", { time: this._time(s.visit_ends) })}`;
+      return [text, cls];
     }
 
     _renderList() {
