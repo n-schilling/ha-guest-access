@@ -49,10 +49,11 @@ Rooms are configured once on the entry: name and the door contact (`binary_senso
 | Kind | Entity or event | Purpose |
 |---|---|---|
 | Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
+| Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms, earliest deadline | alarm automations read only this |
 | Events | `guest_access_arrived`, `guest_access_left`, `guest_access_room_violation`, `guest_access_time_up`, `guest_access_approval_expired`, `guest_access_approval_changed` | push, log and image series stay in automations |
 
-The integration notifies nobody and never arms or disarms anything. Reactions stay in the alarm system's automations.
+The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities or the events. No template is needed for that.
 
 ### Page
 
