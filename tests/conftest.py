@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -16,11 +16,6 @@ from custom_components.guest_access.const import DOMAIN, STORAGE_KEY, TITLE
 TRACKER = "device_tracker.anna_phone"
 DOOR = "binary_sensor.bedroom_door"
 RESIDENT = "person.sam"
-
-
-@pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations: Any) -> None:
-    """Load the integration from custom_components in every test."""
 
 
 @pytest.fixture

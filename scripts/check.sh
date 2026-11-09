@@ -4,7 +4,12 @@
 # their coverage threshold, and hassfest in the very container the GitHub
 # action starts. Keep the steps in step with .github/workflows/ci.yaml.
 #
-# Usage: scripts/check.sh [--no-hassfest]
+# Usage: scripts/check.sh [--no-hassfest] [--no-page]
+#
+# The page checks (scripts/panel/check_panel.py) start a throwaway Home
+# Assistant on 127.0.0.1 and drive the page in a headless browser. They run
+# with .venv-panel (requirements_panel.txt) and the installed Google Chrome,
+# else Playwright's Chromium; without .venv-panel they are skipped.
 #
 # The tools come from .venv when there is one, otherwise from PATH (a
 # devcontainer, another virtual environment, a system installation).
@@ -69,7 +74,29 @@ run "Strict typing" "$MYPY" custom_components
 run "Tests" "$PYTEST" -q \
     --cov=custom_components.guest_access --cov-report=term-missing:skip-covered --cov-fail-under=95
 
-if [[ "${1:-}" == "--no-hassfest" ]]; then
+no_hassfest=false
+no_page=false
+for arg in "$@"; do
+    case "$arg" in
+        --no-hassfest) no_hassfest=true ;;
+        --no-page) no_page=true ;;
+        *) echo "unknown option $arg" >&2; exit 2 ;;
+    esac
+done
+
+if $no_page; then
+    skipped+=("Page (--no-page)")
+elif [[ ! -x .venv-panel/bin/python ]]; then
+    skipped+=("Page (no .venv-panel; see README, section Development)")
+else
+    browser=chromium
+    if [[ -d "/Applications/Google Chrome.app" ]] || command -v google-chrome > /dev/null; then
+        browser=chrome
+    fi
+    run "Page" .venv-panel/bin/python -I scripts/panel/check_panel.py --browser "$browser"
+fi
+
+if $no_hassfest; then
     skipped+=("Hassfest (--no-hassfest)")
 elif ! docker info > /dev/null 2>&1; then
     skipped+=("Hassfest (Docker is not running)")

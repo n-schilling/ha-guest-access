@@ -213,6 +213,10 @@ Guest Access stores only the profiles, the visit in progress and, for guests wit
 
   The endings follow the language of Home Assistant (in German `_zahlt`, `_status`, `_besuchsende`, `_aktivitat`). The summary entities (`guest_access_*`) stay recorded, for automations or dashboards that use their history. Exclude the trackers of guests too if their integration records more than home or away, for example a room.
 
+### Diagnostics
+
+**Settings → Devices & services → Guest Access → ⋮ → Download diagnostics** gives the settings, every guest with status, approval, rooms and visit state, the state of each tracker, resident and door, and the open repair kinds. Names, entity IDs and areas are replaced by placeholders (Guest 1, Room 1), times by minutes from now and the visit log by its size, so the file can be attached to an issue as it is.
+
 ### Repairs
 
 Once Home Assistant has started, Guest Access opens a repair issue for every tracker, resident or door contact that is neither registered nor has a state, and for every lockable room whose area is gone; doors and areas as errors, because the room lock cannot see them. An issue closes by itself when the entity or area is back or no longer used.
@@ -232,7 +236,7 @@ Profiles and the runtime state (approval, last time a tracker was home, deadline
 3. **Settings → Devices & services → Add integration → Guest Access.**
 4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
-Requires Home Assistant 2026.10 or later; the Marketplace exists from 2026.11 on. On 2026.10 add the repository in HACS under **⋮ → Custom repositories** as type **Integration** instead, or copy `custom_components/guest_access` into your configuration directory. There are no requirements outside Home Assistant.
+Requires Home Assistant 2026.11 or later. Without the Marketplace, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart. There are no requirements outside Home Assistant.
 
 ## Development
 
@@ -241,7 +245,19 @@ uv venv --python 3.14 && uv pip install -r requirements_test.txt
 scripts/check.sh
 ```
 
-`scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, and hassfest in Docker.
+`scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, the page checks and hassfest in Docker.
+
+The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (list, form, visit log, lock, rename, errors, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
+
+```bash
+uv venv --python 3.14 .venv-panel && uv pip install --python .venv-panel/bin/python -r requirements_panel.txt
+```
+
+They use an installed Google Chrome, otherwise Playwright's Chromium (`.venv-panel/bin/python -m playwright install chromium`). The pictures in this README come from the same run:
+
+```bash
+.venv-panel/bin/python -I scripts/panel/check_panel.py --screenshots docs/screenshots
+```
 
 Releases: CI on `main` tags the version from `manifest.json` and publishes a GitHub release with its CHANGELOG section; the Marketplace offers it as an update.
 

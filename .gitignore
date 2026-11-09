@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 .coverage
 custom_components/guest_access/BUILD
+.venv-panel/

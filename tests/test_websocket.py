@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
-from pytest_homeassistant_custom_component.typing import WebSocketGenerator
+from pytest_homeassistant.common import MockConfigEntry, MockUser
+from pytest_homeassistant.typing import WebSocketGenerator
 
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
