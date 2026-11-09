@@ -237,7 +237,7 @@ async def test_approval_change_names_admin(
     await client.send_json_auto_id({"type": "guest_access/lock_guest", "guest_id": "anna"})
     assert (await client.receive_json())["success"]
     await hass.async_block_till_done()
-    activity = hass.states.get("event.anna_activity")
+    activity = hass.states.get("event.guest_anna_activity")
     assert activity is not None
     assert activity.attributes["event_type"] == "approval_changed"
     assert activity.attributes["kind"] == "off"

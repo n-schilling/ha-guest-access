@@ -9,7 +9,20 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_GRACE_MINUTES, DEFAULT_VISIT_MINUTES, MAX_GRACE_MINUTES, VISIT_CHOICES
+from .const import (
+    DEFAULT_GRACE_MINUTES,
+    DEFAULT_LOG_GRID_MINUTES,
+    DEFAULT_LOG_KEEP_DAYS,
+    DEFAULT_LOG_KEEP_MONTHS,
+    DEFAULT_RESUME_MINUTES,
+    DEFAULT_VISIT_MINUTES,
+    MAX_GRACE_MINUTES,
+    MAX_LOG_GRID_MINUTES,
+    MAX_LOG_KEEP_DAYS,
+    MAX_LOG_KEEP_MONTHS,
+    MAX_RESUME_MINUTES,
+    MAX_VISIT_MINUTES,
+)
 
 
 class ApprovalKind(StrEnum):
@@ -157,8 +170,8 @@ class Guest:
     # None is unlimited
     visit_minutes: int | None = DEFAULT_VISIT_MINUTES
     grace_minutes: int = DEFAULT_GRACE_MINUTES
-    # Keep a visit log
-    log_visits: bool = True
+    # Keep a visit log: date, start and length of each visit on a grid; off by default
+    log_visits: bool = False
 
     def __post_init__(self) -> None:
         """Reject a guest the rules do not allow."""
@@ -166,8 +179,8 @@ class Guest:
             raise ValueError("a guest needs a name")
         if not self.trackers:
             raise ValueError("a guest needs at least one tracker")
-        if self.visit_minutes not in VISIT_CHOICES:
-            raise ValueError(f"the time per visit is one of {VISIT_CHOICES}")
+        if self.visit_minutes is not None and not 1 <= self.visit_minutes <= MAX_VISIT_MINUTES:
+            raise ValueError(f"the time per visit is between 1 and {MAX_VISIT_MINUTES} minutes")
         if not 1 <= self.grace_minutes <= MAX_GRACE_MINUTES:
             raise ValueError(f"the grace time is between 1 and {MAX_GRACE_MINUTES} minutes")
 
@@ -207,7 +220,7 @@ class Guest:
             all_rooms=bool(data.get("all_rooms", False)),
             visit_minutes=data.get("visit_minutes", DEFAULT_VISIT_MINUTES),
             grace_minutes=data.get("grace_minutes", DEFAULT_GRACE_MINUTES),
-            log_visits=bool(data.get("log_visits", True)),
+            log_visits=bool(data.get("log_visits", False)),
         )
 
 
@@ -228,15 +241,40 @@ class Room:
         return cls(data["area_id"], data["door"])
 
 
+def _check_range(name: str, value: int, maximum: int) -> None:
+    if not 1 <= value <= maximum:
+        raise ValueError(f"{name} is between 1 and {maximum}")
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """What is set once: the residents and the lockable rooms."""
+    """What is set once: the residents, the lockable rooms and the timings."""
 
     residents: tuple[str, ...] = ()
     rooms: tuple[Room, ...] = ()
+    # After a restart: how long a guest who counted may take to be seen again
+    resume_minutes: int = DEFAULT_RESUME_MINUTES
+    # Visit log: grid in minutes, days single visits are kept, months totals are kept
+    log_grid_minutes: int = DEFAULT_LOG_GRID_MINUTES
+    log_keep_days: int = DEFAULT_LOG_KEEP_DAYS
+    log_keep_months: int = DEFAULT_LOG_KEEP_MONTHS
+
+    @property
+    def resume_window(self) -> timedelta:
+        """How long a guest who counted may take to be seen again after a restart."""
+        return timedelta(minutes=self.resume_minutes)
+
+    @property
+    def log_grid(self) -> timedelta:
+        """The grid of the visit log."""
+        return timedelta(minutes=self.log_grid_minutes)
 
     def __post_init__(self) -> None:
-        """Reject a room twice or a door for two rooms."""
+        """Reject a room twice, a door for two rooms or a timing out of range."""
+        _check_range("the resume time", self.resume_minutes, MAX_RESUME_MINUTES)
+        _check_range("the grid of the visit log", self.log_grid_minutes, MAX_LOG_GRID_MINUTES)
+        _check_range("the days single visits are kept", self.log_keep_days, MAX_LOG_KEEP_DAYS)
+        _check_range("the months totals are kept", self.log_keep_months, MAX_LOG_KEEP_MONTHS)
         areas = [room.area_id for room in self.rooms]
         doors = [room.door for room in self.rooms]
         if len(set(areas)) != len(areas):
@@ -253,6 +291,10 @@ class Settings:
         return {
             "residents": list(self.residents),
             "rooms": [room.as_dict() for room in self.rooms],
+            "resume_minutes": self.resume_minutes,
+            "log_grid_minutes": self.log_grid_minutes,
+            "log_keep_days": self.log_keep_days,
+            "log_keep_months": self.log_keep_months,
         }
 
     @classmethod
@@ -261,6 +303,10 @@ class Settings:
         return cls(
             tuple(data.get("residents", ())),
             tuple(Room.from_dict(room) for room in data.get("rooms", ())),
+            int(data.get("resume_minutes", DEFAULT_RESUME_MINUTES)),
+            int(data.get("log_grid_minutes", DEFAULT_LOG_GRID_MINUTES)),
+            int(data.get("log_keep_days", DEFAULT_LOG_KEEP_DAYS)),
+            int(data.get("log_keep_months", DEFAULT_LOG_KEEP_MONTHS)),
         )
 
 

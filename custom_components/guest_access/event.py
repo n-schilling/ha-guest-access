@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.event import EventEntity
+from homeassistant.const import Platform
 from homeassistant.core import Context, HomeAssistant, callback
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -34,11 +35,14 @@ async def async_setup_entry(
 class GuestEvent(GuestEntity, EventEntity):
     """Arrived, left, time up, approval expired or changed."""
 
+    # Who changed an approval is in the logbook; the history keeps only the event
+    _unrecorded_attributes = frozenset({"by"})
+
     _attr_event_types = GUEST_EVENT_TYPES
 
     def __init__(self, engine: GuestEngine, guest_id: str) -> None:
         """Initialize the entity."""
-        super().__init__(engine, guest_id, "activity")
+        super().__init__(engine, guest_id, "activity", Platform.EVENT)
 
     async def async_added_to_hass(self) -> None:
         """Follow the events of this guest."""
@@ -67,6 +71,8 @@ class GuestEvent(GuestEntity, EventEntity):
 
 class RoomViolationEvent(HubEntity, EventEntity):
     """The door of a locked room opened while only guests are home."""
+
+    _unrecorded_attributes = frozenset({"guests"})
 
     _attr_event_types = [EVENT_OPENED]
 

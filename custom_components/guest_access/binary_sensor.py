@@ -6,6 +6,7 @@ from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -40,7 +41,7 @@ class GuestCountsSensor(GuestEntity, BinarySensorEntity):
 
     def __init__(self, engine: GuestEngine, guest_id: str) -> None:
         """Initialize the sensor."""
-        super().__init__(engine, guest_id, "counts")
+        super().__init__(engine, guest_id, "counts", Platform.BINARY_SENSOR)
 
     @property
     def is_on(self) -> bool:
@@ -49,7 +50,9 @@ class GuestCountsSensor(GuestEntity, BinarySensorEntity):
 
 
 class GuestsHomeSensor(HubEntity, BinarySensorEntity):
-    """On while any guest counts; the alarm system reads this one."""
+    # Names and rooms are for automations now, not for the history
+    _unrecorded_attributes = frozenset({"guests", "free_rooms", "locked_rooms"})
+    """On while any guest counts: what other parts of Home Assistant read to treat guests as home."""
 
     _attr_device_class = BinarySensorDeviceClass.PRESENCE
 

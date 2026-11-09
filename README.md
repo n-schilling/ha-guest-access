@@ -1,10 +1,10 @@
 # Guest Access
 
-A Home Assistant integration that decides which guests count as present for an alarm system: one profile per guest with any number of trackers, an approval with a validity, optionally a time window, the rooms the guest may enter and the time per visit.
+[![HACS: custom](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
 
+A Home Assistant integration to manage guests without making them persons in Home Assistant. Each guest has a profile: any number of trackers, an approval with a validity and optional time windows, the rooms the guest may enter, the time per visit and, if wanted, a visit log. Guest Access tells Home Assistant which guests count as home, whether only guests are home and what happens to each guest; your automations decide what follows, from greeting a guest with light to an alarm system that treats approved guests like residents.
 
-
-Status: 0.1.0 in development, not deployed yet.
+Guests are managed on a page in the sidebar, for administrators only. No entity can change an approval.
 
 ## Design
 
@@ -29,13 +29,13 @@ flowchart LR
     areas --> engine
     engine --> entities["Entities<br/>per guest and summary"]
     engine --> repairs["Repair issues"]
-    entities --> automations["Automations"]
-    automations --> alarm["Alarm system"]
-    automations --> push["Push"]
-    automations --> log["Alarm log, image series"]
+    entities --> automations["Your automations"]
+    automations --> comfort["Light, media, climate"]
+    automations --> notify["Notifications"]
+    automations --> security["Alarm system, room lock"]
 ```
 
-Guest Access reads trackers, residents and door contacts and decides; everything to the right of the entities is an automation of the installation, not part of the integration.
+Guest Access reads trackers, residents and door contacts and decides; everything to the right of the entities is up to your automations, not part of the integration.
 
 ### Guests
 
@@ -49,7 +49,8 @@ A guest is a profile with:
 | Time windows | optional for permanent approvals (with or without an end): any number of windows, each weekdays and a time range; the approval applies within any of them, e.g. Mon–Fri 08:00–18:00 and Sat 10:00–14:00 |
 | Grace time | how long all trackers may be away and the visit still goes on when one returns; for a once approval also when it ends (default 15 min) |
 | Rooms | the lockable rooms (see Room lock) the guest may enter on top of the unlockable ones, or everything |
-| Time per visit | 30, 60 (default) or 120 minutes or unlimited, counted from the arrival that starts the visit |
+| Time per visit | 1 to 1440 minutes (default 60) or unlimited, counted from the arrival that starts the visit |
+| Visit log | off by default; see Visit log |
 
 ### When a guest counts
 
@@ -82,8 +83,8 @@ stateDiagram-v2
     approval_expired --> not_approved: locked on the page
     not_approved --> away: all trackers away
     counting --> resuming: Home Assistant restarts
-    resuming --> counting: tracker home within 10 min
-    resuming --> away: no tracker home after 10 min
+    resuming --> counting: tracker home within the resume time
+    resuming --> away: no tracker home in the resume time
 ```
 
 `away` includes the grace time: the guest does not count, but a return within it continues the visit. A visit with a `once` approval, step by step:
@@ -145,20 +146,55 @@ Each guest is a device with its entities.
 | Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
 | Per guest | `sensor` "<guest> status" (enum: `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`) | dashboards show it as it is, no template |
 | Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
-| Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log) | the hours on a dashboard |
+| Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log; disabled by default, see Privacy) | the hours on a dashboard |
 | Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
-| Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | alarm automations read only this |
+| Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | the one entity automations read to treat guests as home |
 | Summary | `sensor` "Guests home since" (timestamp: the earliest arrival of the guests who count; unknown while none counts; a restart or a return within the grace time does not move it) | dashboards showing since when guests are home |
 | Room lock | `event` "Room violation" with the type `opened`, carrying the area, the door and the guests who count | push, log and image series stay in automations |
 
-The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities. No template is needed for that.
+A new guest's entities get the IDs `guest_<name>_<entity name>`, in the language of Home Assistant, so a guest's entities stand together; renaming a guest later keeps the IDs.
+
+The integration only provides state and triggers; it notifies nobody and switches nothing. Every reaction (turning on lights on arrival, keeping the TV off while only guests are home, an alarm system that counts approved guests as home) is an automation that uses state triggers on these entities. No template is needed for that.
 
 No entity changes an approval: Home Assistant cannot limit an entity to administrators, so approvals are changed only on the page.
 
 ### Visit log
 
-For guests whose hours matter (a cleaner, a babysitter) Guest Access keeps a visit log, not a surveillance record. It is on per guest by default and can be switched off; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a quarter-hour grid; a return within the grace time is the same visit. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days, monthly totals (visits, hours) for 13 months. The log shows only on the page, with a CSV export and a delete button; the sensor "<guest> hours this month" carries the hours of the finished visits this month.
+For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a visit log, not a surveillance record. It is off by default and switched on per guest; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a grid (default 15 minutes); a return within the grace time is the same visit. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days and monthly totals (visits, hours) for 13 months by default. The log shows only on the page, with a CSV export and a delete button; the sensor "<guest> hours this month" carries the hours of the finished visits this month.
+
+### Settings
+
+On the page, under residents and rooms:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Residents | none | `person` entities; the room lock applies while none of them is home |
+| Lockable rooms | none | areas, each with exactly one door contact |
+| Resume time | 10 min | after a restart, how long a guest who counted may take to be seen again and continue the visit |
+| Grid of the visit log | 15 min | start and length of a logged visit are rounded to it |
+| Keep single visits | 90 days | then a visit is deleted, its monthly total stays |
+| Keep monthly totals | 13 months | then the total is deleted |
+
+### Privacy
+
+Guest Access stores only the profiles, the visit in progress and, for guests with a visit log, the rounded visits. It writes no guest names to the Home Assistant log.
+
+- The names, rooms and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
+- The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
+- Home Assistant still records the state of each guest's entities (counts, status, events) to the minute for as long as your recorder keeps history. If the history should not hold more than the visit log, exclude the guests' entities from the recorder, for example:
+
+  ```yaml
+  recorder:
+    exclude:
+      entity_globs:
+        - binary_sensor.guest_*_counts
+        - sensor.guest_*_status
+        - sensor.guest_*_visit_ends
+        - event.guest_*_activity
+  ```
+
+  The endings follow the language of Home Assistant (in German `_zahlt`, `_status`, `_besuchsende`, `_aktivitat`). The summary entities (`guest_access_*`) stay recorded, for automations or dashboards that use their history. Exclude the trackers of guests too if their integration records more than home or away, for example a room.
 
 ### Repairs
 
@@ -166,11 +202,20 @@ Once Home Assistant has started, Guest Access opens a repair issue for every tra
 
 ### Page
 
-A sidebar page for administrators only: the list of guests with their state, a form per guest, a "lock now" button that sets the approval to `off`, and the rooms of the entry. Non-administrators get no page.
+A sidebar page for administrators only: the list of guests with their state, a form per guest, a "lock now" button that sets the approval to `off`, the residents, rooms and timings, and at the bottom the version and the commit it was deployed from. Non-administrators get no page.
 
 ### State
 
-Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`; when that happens within ten minutes, the visit goes on with its end and without a new `arrived`, otherwise the guest has left.
+Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`; when that happens within the resume time, the visit goes on with its end and without a new `arrived`, otherwise the guest has left.
+
+## Installation
+
+1. In HACS: **⋮ → Custom repositories**, add `https://github.com/n-schilling/ha-guest-access` as type **Integration**.
+2. Install **Guest Access** and restart Home Assistant.
+3. **Settings → Devices & services → Add integration → Guest Access.**
+4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
+
+Requires Home Assistant 2026.10 or later. There are no requirements outside Home Assistant.
 
 ## Development
 
@@ -181,10 +226,16 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, and hassfest in Docker.
 
-Deploy to a Home Assistant OS host (copies the files, writes the deployed commit for the page and restarts Home Assistant):
+Releases: CI on `main` tags the version from `manifest.json` and publishes a GitHub release with its CHANGELOG section; HACS offers it as an update.
+
+For testing on a Home Assistant OS host before a release (copies the files, writes the deployed commit for the page and restarts Home Assistant):
 
 ```bash
 scripts/deploy.sh <ssh-host>
 ```
 
 The page shows the version and that commit at the bottom; `-dirty` marks files that differ from it.
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE).

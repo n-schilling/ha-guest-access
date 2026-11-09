@@ -28,6 +28,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.translation import async_get_translations
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
@@ -89,6 +90,8 @@ class GuestEngine:
         self._doors: dict[str, str] = {}
         # Shown on the page: the version and the commit it was deployed from
         self.about: dict[str, str | None] = {"version": None, "commit": None}
+        # Entity names in the language of Home Assistant, for the IDs of new entities
+        self._entity_names: dict[str, str] = {}
 
     # Life cycle
 
@@ -101,6 +104,9 @@ class GuestEngine:
         """
         if (stored := await self._store.async_load()) is not None:
             self.data = AccessData.from_dict(stored)
+        self._entity_names = await async_get_translations(
+            self.hass, self.hass.config.language, "entity", {DOMAIN}
+        )
         integration = await async_get_integration(self.hass, DOMAIN)
         commit = await self.hass.async_add_executor_job(_read_commit)
         self.about = {"version": str(integration.version), "commit": commit}
@@ -315,6 +321,10 @@ class GuestEngine:
         self._store.async_delay_save(self.data.as_dict, SAVE_DELAY)
 
     # What the entities and the page read
+
+    def entity_name(self, platform: str, key: str) -> str:
+        """The name of an entity in the language of Home Assistant, or its key."""
+        return self._entity_names.get(f"component.{DOMAIN}.entity.{platform}.{key}.name", key)
 
     def guest(self, guest_id: str) -> Guest | None:
         """A guest, or None when there is no such guest."""

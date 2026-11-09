@@ -355,7 +355,7 @@ def test_home_since() -> None:
 
 def test_visit_log() -> None:
     """A visit is logged once it is over, rounded to the quarter hour; a return within the grace time is the same visit."""
-    data = make(guest())
+    data = make(guest(log_visits=True))
     evaluate(data, seen("a"), T0 + timedelta(minutes=2))
     evaluate(data, seen(), T0 + timedelta(minutes=30))
     evaluate(data, seen("a"), T0 + timedelta(minutes=35))
@@ -372,7 +372,7 @@ def test_visit_log() -> None:
 
 def test_visit_log_short_locked_and_off() -> None:
     """A short visit counts a quarter hour; a lock ends and logs it; without a log nothing is kept."""
-    data = make(guest(), guest("b", log_visits=False))
+    data = make(guest(log_visits=True), guest("b"))
     evaluate(data, seen("a", "b"), T0)
     data.guests["a"] = replace(data.guests["a"], approval=Approval())
     evaluate(data, seen("a", "b"), T0 + timedelta(minutes=3))
@@ -384,7 +384,7 @@ def test_visit_log_short_locked_and_off() -> None:
 
 def test_visit_log_locked_while_away_and_stale_visit() -> None:
     """A lock while away ends the visit when the guest left; an unnoticed grace expiry too."""
-    data = make(guest(), guest("b"))
+    data = make(guest(log_visits=True), guest("b", log_visits=True))
     evaluate(data, seen("a", "b"), T0)
     evaluate(data, seen(), T0 + timedelta(minutes=30))
     data.guests["a"] = replace(data.guests["a"], approval=Approval())
@@ -396,7 +396,7 @@ def test_visit_log_locked_while_away_and_stale_visit() -> None:
 
 def test_visit_log_after_restart() -> None:
     """A guest locked while waiting to resume ends the visit at the restart."""
-    data = make(guest())
+    data = make(guest(log_visits=True))
     evaluate(data, seen("a"), T0)
     prepare_restart(data, T0 + timedelta(minutes=45))
     data.guests["a"] = replace(data.guests["a"], approval=Approval())
@@ -406,7 +406,7 @@ def test_visit_log_after_restart() -> None:
 
 def test_prune_and_forget_log() -> None:
     """Single visits go after 90 days, totals after 13 months; forgetting removes both."""
-    data = make(guest())
+    data = make(guest(log_visits=True))
     for days in (0, 100):
         evaluate(data, seen("a"), T0 - timedelta(days=days))
         evaluate(data, seen(), T0 - timedelta(days=days) + timedelta(hours=1))
@@ -422,3 +422,18 @@ def test_prune_and_forget_log() -> None:
     data.months["a"] = {"2020-01": data.months.get("x", {}).get("y") or MonthTotal(1, 15)}
     prune_log(data, T0)
     assert "a" not in data.months
+
+
+def test_visit_log_settings() -> None:
+    """Grid, keeping and resume time come from the settings."""
+    from custom_components.guest_access.model import Settings
+
+    data = make(guest(log_visits=True))
+    data.settings = Settings(("person.sam",), ROOMS, 5, 30, 1, 1)
+    evaluate(data, seen("a"), T0 + timedelta(minutes=10))
+    evaluate(data, seen(), T0 + timedelta(minutes=80))
+    evaluate(data, seen(), T0 + timedelta(minutes=96))
+    assert [(v.start, v.minutes) for v in data.visits] == [(T0, 60)]
+    prepare_restart(data, T0 + timedelta(hours=2))
+    evaluate(data, seen(), T0 + timedelta(days=2))
+    assert data.visits == []

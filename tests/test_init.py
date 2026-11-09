@@ -21,13 +21,13 @@ from custom_components.guest_access.engine import GuestEngine
 
 from .conftest import DOOR, RESIDENT, TRACKER
 
-COUNTS = "binary_sensor.anna_counts"
+COUNTS = "binary_sensor.guest_anna_counts"
 GUESTS_HOME = "binary_sensor.guest_access_guests_home"
 ONLY_GUESTS = "binary_sensor.guest_access_only_guests_home"
-VISIT_ENDS = "sensor.anna_visit_ends"
-STATUS = "sensor.anna_status"
+VISIT_ENDS = "sensor.guest_anna_visit_ends"
+STATUS = "sensor.guest_anna_status"
 HOME_SINCE = "sensor.guest_access_guests_home_since"
-ACTIVITY = "event.anna_activity"
+ACTIVITY = "event.guest_anna_activity"
 VIOLATION = "event.guest_access_room_violation"
 
 
@@ -236,8 +236,8 @@ async def test_new_guest_gets_entities(hass: HomeAssistant, entry: MockConfigEnt
 
     engine.async_save_guest(Guest("ben", "Ben", ("device_tracker.ben",)))
     await hass.async_block_till_done()
-    assert state(hass, "binary_sensor.ben_counts") == STATE_OFF
-    assert attr(hass, "event.ben_activity", "event_type") == "approval_changed"
+    assert state(hass, "binary_sensor.guest_ben_counts") == STATE_OFF
+    assert attr(hass, "event.guest_ben_activity", "event_type") == "approval_changed"
     assert engine.area_name("gone") == "gone"
 
 
@@ -509,7 +509,18 @@ async def test_visit_log_sensor_and_off(
     from dataclasses import replace
 
     engine = engine_of(entry)
-    hours = "sensor.anna_hours_this_month"
+    hours = "sensor.guest_anna_hours_this_month"
+    registry = er.async_get(hass)
+    assert registry.async_get(hours).disabled_by is er.RegistryEntryDisabler.INTEGRATION  # type: ignore[union-attr]
+    registry.async_update_entity(hours, disabled_by=None)
+    # Home Assistant reloads the entry itself after enabling an entity
+    freezer.tick(timedelta(seconds=31))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    engine = engine_of(entry)
+    assert state(hass, hours) == STATE_UNKNOWN
+    engine.async_save_guest(replace(engine.data.guests["anna"], log_visits=True))
+    await hass.async_block_till_done()
     assert state(hass, hours) == "0.0"
     hass.states.async_set(TRACKER, "home")
     await hass.async_block_till_done()

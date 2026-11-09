@@ -11,19 +11,25 @@ TITLE: Final = "Guest Access"
 STORAGE_KEY: Final = DOMAIN
 STORAGE_VERSION: Final = 1
 
-# How long all trackers of a once guest may be away before the approval ends
+# Defaults and limits; the values themselves are settings of the entry or of a guest
+# A return within the grace time continues the visit
 DEFAULT_GRACE_MINUTES: Final = 15
 MAX_GRACE_MINUTES: Final = 240
 # Time per visit, None is unlimited
-VISIT_CHOICES: Final = (30, 60, 120, None)
 DEFAULT_VISIT_MINUTES: Final = 60
+MAX_VISIT_MINUTES: Final = 24 * 60
 # After a restart a guest who counted before keeps the visit when a tracker
 # reports home within this time; otherwise the guest has left
-RESUME_WINDOW: Final = timedelta(minutes=10)
-# Visit log: quarter-hour grid, single visits 90 days, totals 13 months
-LOG_GRID: Final = timedelta(minutes=15)
-LOG_KEEP_VISITS: Final = timedelta(days=90)
-LOG_KEEP_MONTHS: Final = 13
+DEFAULT_RESUME_MINUTES: Final = 10
+MAX_RESUME_MINUTES: Final = 60
+RESUME_WINDOW: Final = timedelta(minutes=DEFAULT_RESUME_MINUTES)
+# Visit log: grid, how long single visits and monthly totals are kept
+DEFAULT_LOG_GRID_MINUTES: Final = 15
+MAX_LOG_GRID_MINUTES: Final = 60
+DEFAULT_LOG_KEEP_DAYS: Final = 90
+MAX_LOG_KEEP_DAYS: Final = 3650
+DEFAULT_LOG_KEEP_MONTHS: Final = 13
+MAX_LOG_KEEP_MONTHS: Final = 120
 # Written by scripts/deploy.sh: the commit the deployed files come from
 BUILD_FILE: Final = "BUILD"
 

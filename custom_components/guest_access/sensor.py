@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import UnitOfTime
+from homeassistant.const import Platform, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -44,7 +44,7 @@ class VisitEndsSensor(GuestEntity, SensorEntity):
 
     def __init__(self, engine: GuestEngine, guest_id: str) -> None:
         """Initialize the sensor."""
-        super().__init__(engine, guest_id, "visit_ends")
+        super().__init__(engine, guest_id, "visit_ends", Platform.SENSOR)
 
     @property
     def native_value(self) -> datetime | None:
@@ -61,7 +61,7 @@ class GuestStatusSensor(GuestEntity, SensorEntity):
 
     def __init__(self, engine: GuestEngine, guest_id: str) -> None:
         """Initialize the sensor."""
-        super().__init__(engine, guest_id, "status")
+        super().__init__(engine, guest_id, "status", Platform.SENSOR)
 
     @property
     def native_value(self) -> str:
@@ -96,11 +96,13 @@ class MonthHoursSensor(GuestEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.HOURS
+    # Every user can read an entity, the log is for administrators: off until enabled
+    _attr_entity_registry_enabled_default = False
     _attr_suggested_display_precision = 2
 
     def __init__(self, engine: GuestEngine, guest_id: str) -> None:
         """Initialize the sensor."""
-        super().__init__(engine, guest_id, "month_hours")
+        super().__init__(engine, guest_id, "month_hours", Platform.SENSOR)
 
     @property
     def native_value(self) -> float | None:

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import slugify
 
 from . import GuestAccessConfigEntry
 from .const import DOMAIN, TITLE
@@ -52,12 +54,20 @@ class HubEntity(GuestAccessEntity):
 class GuestEntity(GuestAccessEntity):
     """An entity of a guest's device."""
 
-    def __init__(self, engine: GuestEngine, guest_id: str, key: str) -> None:
-        """Initialize the entity."""
+    def __init__(self, engine: GuestEngine, guest_id: str, key: str, platform: Platform) -> None:
+        """Initialize the entity.
+
+        A new entity gets the ID guest_<name>_<name of the entity>, in the language
+        of Home Assistant, so a guest's entities stand together; an existing one keeps
+        its ID.
+        """
         super().__init__(engine)
         self.guest_id = guest_id
         self._attr_translation_key = key
         self._attr_unique_id = f"{guest_id}_{key}"
+        guest = engine.data.guests[guest_id]
+        name = engine.entity_name(platform, key)
+        self.entity_id = f"{platform}.{slugify(f'guest {guest.name} {name}')}"
 
     @property
     def device_info(self) -> DeviceInfo:

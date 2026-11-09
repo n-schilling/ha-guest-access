@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -20,10 +20,6 @@ from .const import (
     EVENT_ARRIVED,
     EVENT_LEFT,
     EVENT_TIME_UP,
-    LOG_GRID,
-    LOG_KEEP_MONTHS,
-    LOG_KEEP_VISITS,
-    RESUME_WINDOW,
 )
 from .model import AccessData, Approval, ApprovalKind, Guest, Lock, MonthTotal, Presence, Visit
 
@@ -77,12 +73,12 @@ def prepare_restart(data: AccessData, now: datetime) -> None:
         presence = data.presence_of(guest_id)
         if presence.counting:
             presence.counting = False
-            presence.resume_until = now + RESUME_WINDOW
+            presence.resume_until = now + data.settings.resume_window
 
 
-def _grid(moment: datetime) -> datetime:
-    """The nearest quarter hour."""
-    step = LOG_GRID.total_seconds()
+def _grid(moment: datetime, grid: timedelta) -> datetime:
+    """The nearest point on the grid."""
+    step = grid.total_seconds()
     return datetime.fromtimestamp(round(moment.timestamp() / step) * step, UTC)
 
 
@@ -94,11 +90,10 @@ def month_key(moment: datetime) -> str:
 def _finish(data: AccessData, guest: Guest, presence: Presence, end: datetime) -> None:
     """End the visit; log it, rounded, when the guest keeps a visit log."""
     if guest.log_visits and presence.arrived is not None:
-        start = _grid(presence.arrived)
-        # A visit takes at least one quarter hour
-        minutes = max(round((end - presence.arrived) / LOG_GRID), 1) * int(
-            LOG_GRID.total_seconds() // 60
-        )
+        grid = data.settings.log_grid
+        start = _grid(presence.arrived, grid)
+        # A visit takes at least one step of the grid
+        minutes = max(round((end - presence.arrived) / grid), 1) * data.settings.log_grid_minutes
         data.visits.append(Visit(guest.id, start, minutes))
         totals = data.months.setdefault(guest.id, {})
         month = month_key(start)
@@ -108,10 +103,11 @@ def _finish(data: AccessData, guest: Guest, presence: Presence, end: datetime) -
 
 
 def prune_log(data: AccessData, now: datetime) -> None:
-    """Forget single visits after 90 days and totals after 13 months."""
-    data.visits = [visit for visit in data.visits if now - visit.start < LOG_KEEP_VISITS]
+    """Forget single visits and monthly totals once they are older than the settings keep them."""
+    keep = timedelta(days=data.settings.log_keep_days)
+    data.visits = [visit for visit in data.visits if now - visit.start < keep]
     local = dt_util.as_local(now)
-    oldest = local.year * 12 + local.month - 1 - (LOG_KEEP_MONTHS - 1)
+    oldest = local.year * 12 + local.month - 1 - (data.settings.log_keep_months - 1)
     oldest_key = f"{oldest // 12:04d}-{oldest % 12 + 1:02d}"
     for guest_id in list(data.months):
         kept = {
@@ -184,7 +180,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         # Locked while away or waiting to resume: the visit is over, the rooms lock
         left = presence.away_since
         if left is None and presence.resume_until is not None:
-            left = presence.resume_until - RESUME_WINDOW
+            left = presence.resume_until - data.settings.resume_window
         _finish(data, guest, presence, left or now)
         presence.away_since = None
     resuming = presence.resume_until is not None and now < presence.resume_until
@@ -211,7 +207,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
     if presence.resume_until is not None and not resuming:
         # Not back after a restart: the guest left in the meantime, at the
         # latest when Home Assistant started; the grace time counts from there
-        raised.append(_leave(guest, presence, presence.resume_until - RESUME_WINDOW))
+        raised.append(_leave(guest, presence, presence.resume_until - data.settings.resume_window))
     if presence.away_since is not None and now >= presence.away_since + guest.grace:
         # Away longer than the grace time: the visit is over, it ended on leaving
         _finish(data, guest, presence, presence.away_since)

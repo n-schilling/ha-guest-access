@@ -22,7 +22,6 @@ from .const import (
     DOMAIN,
     MAX_GRACE_MINUTES,
     SIGNAL_CHANGED,
-    VISIT_CHOICES,
     WS_DELETE_GUEST,
     WS_DELETE_VISITS,
     WS_LOCK_GUEST,
@@ -119,11 +118,12 @@ def ws_subscribe(hass: HomeAssistant, connection: ActiveConnection, msg: dict[st
         probatio.Required("approval"): APPROVAL,
         probatio.Optional("rooms", default=[]): [cv.string],
         probatio.Optional("all_rooms", default=False): cv.boolean,
-        probatio.Optional("visit_minutes", default=60): probatio.In(list(VISIT_CHOICES)),
+        # None is unlimited; the range is checked by the guest
+        probatio.Optional("visit_minutes", default=60): probatio.Any(None, probatio.Coerce(int)),
         probatio.Optional("grace_minutes", default=15): probatio.All(
             probatio.Coerce(int), probatio.Range(1, MAX_GRACE_MINUTES)
         ),
-        probatio.Optional("log_visits", default=True): cv.boolean,
+        probatio.Optional("log_visits", default=False): cv.boolean,
     }
 )
 @callback
@@ -222,15 +222,21 @@ def ws_lock_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
         probatio.Required("type"): WS_SAVE_SETTINGS,
         probatio.Required("residents"): [cv.entity_id],
         probatio.Required("rooms"): [ROOM],
+        # Timings; left out they keep their value, the settings check the range
+        probatio.Optional("resume_minutes"): probatio.Coerce(int),
+        probatio.Optional("log_grid_minutes"): probatio.Coerce(int),
+        probatio.Optional("log_keep_days"): probatio.Coerce(int),
+        probatio.Optional("log_keep_months"): probatio.Coerce(int),
     }
 )
 @callback
 def ws_save_settings(
     hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Change the residents and the lockable rooms."""
+    """Change the residents, the lockable rooms and the timings."""
     if (engine := _engine(hass, connection, msg["id"])) is None:
         return
+    current = engine.data.settings
     areas = ar.async_get(hass)
     try:
         _check_domain(msg["residents"], "person", "residents")
@@ -244,6 +250,10 @@ def ws_save_settings(
         settings = Settings(
             tuple(dict.fromkeys(msg["residents"])),
             tuple(Room(room["area_id"], room["door"]) for room in msg["rooms"]),
+            msg.get("resume_minutes", current.resume_minutes),
+            msg.get("log_grid_minutes", current.log_grid_minutes),
+            msg.get("log_keep_days", current.log_keep_days),
+            msg.get("log_keep_months", current.log_keep_months),
         )
     except ValueError as err:
         connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))

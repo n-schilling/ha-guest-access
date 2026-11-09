@@ -17,7 +17,7 @@ if (!customElements.get("guest-access-panel")) {
       settings: "Residents and rooms",
       edit: "Edit",
       lock: "Lock",
-      lockConfirm: "Lock {name}? The guest no longer counts and can no longer disarm the alarm system.",
+      lockConfirm: "Lock {name}? The guest no longer counts as home until approved again.",
       delete: "Delete",
       deleteConfirm: "Delete {name} with the device and its entities?",
       confirm: "Confirm",
@@ -75,7 +75,15 @@ if (!customElements.get("guest-access-panel")) {
       weekdays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
       weekdaysShort: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
       field_log_visits: "Keep a visit log",
-      help_log_visits: "Date, start and length of each visit, on a quarter-hour grid; single visits for 90 days, monthly totals for 13 months. Switched off, the log so far is deleted.",
+      help_log_visits: "Date, start and length of each visit on a {grid}-minute grid; single visits for {days} days, monthly totals for {months} months. Switched off, the log so far is deleted.",
+      field_unlimited: "Unlimited time per visit",
+      field_visit_minutes: "Time per visit",
+      timingsSection: "Timings",
+      field_resume_minutes: "Time to be seen again after a restart",
+      help_resume_minutes: "A guest who counted before a restart continues the visit when a tracker reports home within this time.",
+      field_log_grid_minutes: "Grid of the visit log",
+      field_log_keep_days: "Keep single visits",
+      field_log_keep_months: "Keep monthly totals",
       logSection: "Visit log",
       logOffNote: "Saving deletes the visit log kept so far.",
       logRunning: "Visit running since {time}",
@@ -97,7 +105,7 @@ if (!customElements.get("guest-access-panel")) {
       settings: "Bewohner und Räume",
       edit: "Bearbeiten",
       lock: "Sperren",
-      lockConfirm: "{name} sperren? Der Gast zählt dann nicht mehr und kann die Alarmanlage nicht mehr entschärfen.",
+      lockConfirm: "{name} sperren? Der Gast zählt dann nicht mehr als zuhause, bis er wieder freigegeben wird.",
       delete: "Löschen",
       deleteConfirm: "{name} mit Gerät und Entitäten löschen?",
       confirm: "Bestätigen",
@@ -155,7 +163,15 @@ if (!customElements.get("guest-access-panel")) {
       weekdays: ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
       weekdaysShort: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
       field_log_visits: "Besuchsprotokoll führen",
-      help_log_visits: "Datum, Beginn und Dauer je Besuch, auf 15 Minuten gerundet; einzelne Besuche 90 Tage, Monatssummen 13 Monate. Ausgeschaltet wird das bisherige Protokoll gelöscht.",
+      help_log_visits: "Datum, Beginn und Dauer je Besuch, auf {grid} Minuten gerundet; einzelne Besuche {days} Tage, Monatssummen {months} Monate. Ausgeschaltet wird das bisherige Protokoll gelöscht.",
+      field_unlimited: "Unbegrenzte Dauer je Besuch",
+      field_visit_minutes: "Dauer je Besuch",
+      timingsSection: "Zeiten",
+      field_resume_minutes: "Wiedererkennung nach Neustart",
+      help_resume_minutes: "Ein Gast, der vor einem Neustart zählte, setzt den Besuch fort, wenn ein Tracker in dieser Zeit daheim meldet.",
+      field_log_grid_minutes: "Raster des Besuchsprotokolls",
+      field_log_keep_days: "Einzelne Besuche aufbewahren",
+      field_log_keep_months: "Monatssummen aufbewahren",
       logSection: "Besuchsprotokoll",
       logOffNote: "Beim Speichern wird das bisherige Besuchsprotokoll gelöscht.",
       logRunning: "Besuch läuft seit {time}",
@@ -170,7 +186,6 @@ if (!customElements.get("guest-access-panel")) {
       unknownCommit: "unbekannt",
     },
   };
-  const VISITS = [30, 60, 120, null];
   const KINDS = ["off", "once", "until", "permanent"];
   // Icon and colour per status, as the status sensor shows it
   const STATUS = {
@@ -571,9 +586,10 @@ if (!customElements.get("guest-access-panel")) {
         rooms: {
           all_rooms: guest?.all_rooms ?? false,
           rooms: guest ? [...guest.rooms] : [],
-          visit: guest ? String(guest.visit_minutes ?? "unlimited") : "60",
+          unlimited: guest ? guest.visit_minutes === null : false,
+          visit_minutes: guest?.visit_minutes ?? 60,
         },
-        log: { log_visits: guest?.log_visits ?? true },
+        log: { log_visits: guest?.log_visits ?? false },
         wasLogging: guest?.log_visits ?? false,
       };
       this._error = "";
@@ -586,6 +602,12 @@ if (!customElements.get("guest-access-panel")) {
         kind: "settings",
         main: { residents: [...this._data.settings.residents] },
         rooms: this._data.settings.rooms.map((room) => ({ ...room })),
+        timings: {
+          resume_minutes: this._data.settings.resume_minutes,
+          log_grid_minutes: this._data.settings.log_grid_minutes,
+          log_keep_days: this._data.settings.log_keep_days,
+          log_keep_months: this._data.settings.log_keep_months,
+        },
       };
       this._error = "";
       this._confirm = null;
@@ -608,7 +630,12 @@ if (!customElements.get("guest-access-panel")) {
       form.data = data;
       form.computeLabel = (s) => this._t(`field_${s.name}`);
       form.computeHelper = (s) => {
-        const help = this._t(`help_${s.name}`);
+        const settings = this._data?.settings ?? {};
+        const help = this._t(`help_${s.name}`, {
+          grid: settings.log_grid_minutes,
+          days: settings.log_keep_days,
+          months: settings.log_keep_months,
+        });
         return help === `help_${s.name}` ? undefined : help;
       };
       form.addEventListener("value-changed", (e) => {
@@ -787,28 +814,23 @@ if (!customElements.get("guest-access-panel")) {
           });
         }
       }
-      roomsSchema.push({
-        name: "visit",
-        required: true,
-        selector: {
-          select: {
-            mode: "dropdown",
-            options: VISITS.map((v) => ({
-              value: String(v ?? "unlimited"),
-              label: v === null ? this._t("unlimited") : this._t("minutes", { n: v }),
-            })),
-          },
-        },
-      });
+      roomsSchema.push({ name: "unlimited", selector: { boolean: {} } });
+      if (!f.rooms.unlimited) {
+        roomsSchema.push({
+          name: "visit_minutes",
+          required: true,
+          selector: { number: { min: 1, max: 1440, mode: "box", unit_of_measurement: "min" } },
+        });
+      }
       const roomChildren = configured.length ? [] : [this._note(this._t("noRooms"))];
       content.append(
         this._card(
           this._t("roomsSection"),
           ...roomChildren,
           this._haForm(roomsSchema, f.rooms, (value) => {
-            const allChanged = value.all_rooms !== f.rooms.all_rooms;
+            const changed = value.all_rooms !== f.rooms.all_rooms || value.unlimited !== f.rooms.unlimited;
             f.rooms = value;
-            if (allChanged) this._render();
+            if (changed) this._render();
           }),
         ),
       );
@@ -817,7 +839,7 @@ if (!customElements.get("guest-access-panel")) {
       content.append(this._actions(() => this._saveGuest(), !!f.id));
     }
 
-    // Visit log: date, start and length on a quarter-hour grid
+    // Visit log: date, start and length on the grid of the settings; no rooms, no places
 
     _hours(minutes) {
       return (minutes / 60).toLocaleString(this._hass.locale?.language || undefined, {
@@ -850,7 +872,9 @@ if (!customElements.get("guest-access-panel")) {
         const lines = [];
         if (guest.state.counting && guest.state.arrived) {
           const since = new Date(guest.state.arrived);
-          since.setMinutes(Math.round(since.getMinutes() / 15) * 15, 0, 0);
+          // On the grid of the log, as the finished visit will be
+          const grid = (this._data.settings.log_grid_minutes || 15) * 60000;
+          since.setTime(Math.round(since.getTime() / grid) * grid);
           lines.push(this._t("logRunning", { time: since.toLocaleString(lang, { dateStyle: "short", timeStyle: "short" }) }));
         }
         const [year, month] = log.this_month.split("-").map(Number);
@@ -935,7 +959,7 @@ if (!customElements.get("guest-access-panel")) {
         },
         rooms: f.rooms.all_rooms ? [] : f.rooms.rooms || [],
         all_rooms: !!f.rooms.all_rooms,
-        visit_minutes: f.rooms.visit === "unlimited" ? null : Number(f.rooms.visit),
+        visit_minutes: f.rooms.unlimited ? null : Number(f.rooms.visit_minutes) || 60,
         grace_minutes: Number(f.approval.grace) || 15,
         log_visits: !!f.log.log_visits,
       };
@@ -997,6 +1021,37 @@ if (!customElements.get("guest-access-panel")) {
       });
       content.append(this._card(this._t("lockableRooms"), this._note(this._t("roomsHelp")), ...entries, add));
 
+      const minutes = (max) => ({ number: { min: 1, max, mode: "box", unit_of_measurement: "min" } });
+      content.append(
+        this._card(
+          this._t("timingsSection"),
+          this._haForm(
+            [
+              { name: "resume_minutes", required: true, selector: minutes(60) },
+              { name: "log_grid_minutes", required: true, selector: minutes(60) },
+              {
+                type: "grid",
+                name: "",
+                schema: [
+                  {
+                    name: "log_keep_days",
+                    required: true,
+                    selector: { number: { min: 1, max: 3650, mode: "box", unit_of_measurement: "d" } },
+                  },
+                  {
+                    name: "log_keep_months",
+                    required: true,
+                    selector: { number: { min: 1, max: 120, mode: "box" } },
+                  },
+                ],
+              },
+            ],
+            f.timings,
+            (value) => (f.timings = value),
+          ),
+        ),
+      );
+
       content.append(
         this._actions(async () => {
           try {
@@ -1004,6 +1059,10 @@ if (!customElements.get("guest-access-panel")) {
               type: "guest_access/save_settings",
               residents: f.main.residents || [],
               rooms: f.rooms.filter((r) => r.area_id || r.door),
+              resume_minutes: Number(f.timings.resume_minutes),
+              log_grid_minutes: Number(f.timings.log_grid_minutes),
+              log_keep_days: Number(f.timings.log_keep_days),
+              log_keep_months: Number(f.timings.log_keep_months),
             });
             this._close();
           } catch {

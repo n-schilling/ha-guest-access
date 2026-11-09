@@ -117,7 +117,7 @@ def test_guest_invalid() -> None:
     with pytest.raises(ValueError):
         Guest("a", "Anna", ())
     with pytest.raises(ValueError):
-        Guest("a", "Anna", ("device_tracker.a",), visit_minutes=45)
+        Guest("a", "Anna", ("device_tracker.a",), visit_minutes=0)
     with pytest.raises(ValueError):
         Guest("a", "Anna", ("device_tracker.a",), grace_minutes=0)
     assert Guest("a", "Anna", ("device_tracker.a",), visit_minutes=None).visit is None
@@ -184,3 +184,20 @@ async def test_approval_several_windows(hass: HomeAssistant) -> None:
     assert not approval.valid(local(hass, "2026-11-14T15:00"))
     assert not approval.valid(local(hass, "2026-11-15T11:00"))
     assert approval.next_change(local(hass, "2026-11-14T11:00")) == local(hass, "2026-11-14T14:00")
+
+
+def test_settings_ranges() -> None:
+    """Timings out of range are rejected; JSON keeps them."""
+    from custom_components.guest_access.model import Settings
+
+    for kwargs in (
+        {"resume_minutes": 0},
+        {"log_grid_minutes": 61},
+        {"log_keep_days": 0},
+        {"log_keep_months": 121},
+    ):
+        with pytest.raises(ValueError):
+            Settings(**kwargs)  # type: ignore[arg-type]
+    settings = Settings((), (), 5, 30, 7, 2)
+    assert Settings.from_dict(settings.as_dict()) == settings
+    assert Settings.from_dict({}).resume_minutes == 10
