@@ -46,6 +46,7 @@ if (!customElements.get("guest-access-panel")) {
       kind_until: "Permanent until",
       kind_permanent: "Permanent",
       expired: "expired",
+      outsideWindows: "outside the time windows",
       approvalSection: "Approval",
       roomsSection: "Rooms and time",
       windows: "Time windows",
@@ -88,8 +89,10 @@ if (!customElements.get("guest-access-panel")) {
       logSection: "Visit log",
       logOffNote: "Saving deletes the visit log kept so far.",
       logRunning: "Visit running since {time}",
-      logMonth: "This month: {visits} visits, {hours} h",
-      logLastMonth: "Last month: {visits} visits, {hours} h",
+      logMonth: "This month: {visits}, {hours} h",
+      logLastMonth: "Last month: {visits}, {hours} h",
+      visitOne: "1 visit",
+      visitMany: "{count} visits",
       logNone: "No finished visits yet.",
       logExport: "Export as CSV",
       logDelete: "Delete log",
@@ -135,6 +138,7 @@ if (!customElements.get("guest-access-panel")) {
       kind_until: "Dauerhaft bis",
       kind_permanent: "Dauerhaft",
       expired: "abgelaufen",
+      outsideWindows: "außerhalb der Zeitfenster",
       approvalSection: "Freigabe",
       roomsSection: "Räume und Zeit",
       windows: "Zeitfenster",
@@ -177,8 +181,10 @@ if (!customElements.get("guest-access-panel")) {
       logSection: "Besuchsprotokoll",
       logOffNote: "Beim Speichern wird das bisherige Besuchsprotokoll gelöscht.",
       logRunning: "Besuch läuft seit {time}",
-      logMonth: "Dieser Monat: {visits} Besuche, {hours} h",
-      logLastMonth: "Letzter Monat: {visits} Besuche, {hours} h",
+      logMonth: "Dieser Monat: {visits}, {hours} h",
+      logLastMonth: "Letzter Monat: {visits}, {hours} h",
+      visitOne: "1 Besuch",
+      visitMany: "{count} Besuche",
       logNone: "Noch keine abgeschlossenen Besuche.",
       logExport: "Als CSV exportieren",
       logDelete: "Protokoll löschen",
@@ -376,7 +382,11 @@ if (!customElements.get("guest-access-panel")) {
           `${w.weekdays.map((d) => this._t("weekdaysShort")[d]).join(", ")} ${withoutSeconds(w.start)}–${withoutSeconds(w.end)}`,
       );
       if (windows.length) text += ` · ${windows.join("; ")}`;
-      if (a.kind !== "off" && !guest.state.approval_valid) text += ` (${this._t("expired")})`;
+      if (a.kind !== "off" && !guest.state.approval_valid) {
+        // Not valid now: either past its end or, before that, outside every window
+        const over = a.until && new Date(a.until) <= new Date();
+        text += ` (${this._t(over || !windows.length ? "expired" : "outsideWindows")})`;
+      }
       return text;
     }
 
@@ -884,7 +894,8 @@ if (!customElements.get("guest-access-panel")) {
         const last = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
         for (const [key, text] of [[log.this_month, "logMonth"], [last, "logLastMonth"]]) {
           const total = log.months[key] ?? { visits: 0, minutes: 0 };
-          lines.push(this._t(text, { visits: total.visits, hours: this._hours(total.minutes) }));
+          const visits = total.visits === 1 ? this._t("visitOne") : this._t("visitMany", { count: total.visits });
+          lines.push(this._t(text, { visits, hours: this._hours(total.minutes) }));
         }
         for (const line of lines) children.push(this._note(line));
         const list = document.createElement("div");
@@ -896,7 +907,7 @@ if (!customElements.get("guest-access-panel")) {
           const row = document.createElement("div");
           row.className = "visit";
           const when = document.createElement("span");
-          when.textContent = `${start.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "numeric" })}, ${start.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })}–${end.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })}`;
+          when.textContent = `${start.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "numeric" })}, ${start.toLocaleTimeString(lang, { timeStyle: "short" })}–${end.toLocaleTimeString(lang, { timeStyle: "short" })}`;
           const length = document.createElement("span");
           length.textContent = `${this._hours(visit.minutes)} h`;
           row.append(when, length);

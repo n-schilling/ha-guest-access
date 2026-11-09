@@ -17,7 +17,7 @@ All notable changes to this project are documented here. The format follows
 - New guests' entities are named guest_<name>_<entity name>.
 - Status `inactive` for a guest without an approval who is not home, so dashboards can leave such guests out.
 - Names, rooms and administrators in attributes are not recorded in the history.
-- License (Apache 2.0) and installation through HACS as a custom repository; releases from main.
+- License (Apache 2.0) and installation through the Marketplace (Home Assistant 2026.11 and later) by link, or HACS on 2026.10; releases from main.
 - The page shows the version and the deployed commit; `scripts/deploy.sh` writes that commit.
 - Approval changes name the administrator: `by` in the event data and the user in the logbook.
 - Repair issues for trackers, residents, door contacts and areas that are gone.

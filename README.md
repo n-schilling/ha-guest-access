@@ -1,10 +1,24 @@
 # Guest Access
 
-[![HACS: custom](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![Marketplace: custom](https://img.shields.io/badge/Marketplace-custom-41BDF5.svg)](#installation)
 
 A Home Assistant integration to manage guests without making them persons in Home Assistant. Each guest has a profile: any number of trackers, an approval with a validity and optional time windows, the rooms the guest may enter, the time per visit and, if wanted, a visit log. Guest Access tells Home Assistant which guests count as home, whether only guests are home and what happens to each guest; your automations decide what follows, from greeting a guest with light to an alarm system that treats approved guests like residents.
 
 Guests are managed on a page in the sidebar, for administrators only. No entity can change an approval.
+
+## Screenshots
+
+The guests with their state and approval, made up for these pictures:
+
+<img src="docs/screenshots/guests.png" alt="List of guests: two count as home, one is locked, two are away" width="700">
+
+A guest with a key tag as tracker and two weekly time windows:
+
+<img src="docs/screenshots/guest.png" alt="Form of a guest: name, trackers, approval, grace time and time windows" width="700">
+
+The visit log of a guest, on a 15-minute grid, with monthly totals and a CSV export:
+
+<img src="docs/screenshots/visit-log.png" alt="Visit log: running visit, totals of this and last month, single visits" width="700">
 
 ## Design
 
@@ -213,12 +227,12 @@ Profiles and the runtime state (approval, last time a tracker was home, deadline
 
 ## Installation
 
-1. In HACS: **⋮ → Custom repositories**, add `https://github.com/n-schilling/ha-guest-access` as type **Integration**.
-2. Install **Guest Access** and restart Home Assistant.
+1. **Settings → Marketplace → Add from link** (top right), enter `https://github.com/n-schilling/ha-guest-access` as GitHub link and add it. Adding a repository by link asks you to connect GitHub once.
+2. Install **Guest Access** in the Marketplace and restart Home Assistant.
 3. **Settings → Devices & services → Add integration → Guest Access.**
 4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
-Requires Home Assistant 2026.10 or later. There are no requirements outside Home Assistant.
+Requires Home Assistant 2026.10 or later; the Marketplace exists from 2026.11 on. On 2026.10 add the repository in HACS under **⋮ → Custom repositories** as type **Integration** instead, or copy `custom_components/guest_access` into your configuration directory. There are no requirements outside Home Assistant.
 
 ## Development
 
@@ -229,7 +243,7 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, and hassfest in Docker.
 
-Releases: CI on `main` tags the version from `manifest.json` and publishes a GitHub release with its CHANGELOG section; HACS offers it as an update.
+Releases: CI on `main` tags the version from `manifest.json` and publishes a GitHub release with its CHANGELOG section; the Marketplace offers it as an update.
 
 For testing on a Home Assistant OS host before a release (copies the files, writes the deployed commit for the page and restarts Home Assistant):
 
