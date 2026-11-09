@@ -38,6 +38,8 @@ class GuestCountsSensor(GuestEntity, BinarySensorEntity):
     """On while the guest counts as present."""
 
     _with_picture = True
+    # The photo's address is for dashboards now, not for the history
+    _unrecorded_attributes = frozenset({"entity_picture"})
 
     _attr_device_class = BinarySensorDeviceClass.PRESENCE
 

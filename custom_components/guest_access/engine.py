@@ -22,10 +22,12 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
+from homeassistant.helpers.collection import CHANGE_REMOVED
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
     async_track_state_change_event,
+    async_track_time_interval,
 )
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
@@ -38,6 +40,7 @@ from .const import (
     DOMAIN,
     EVENT_APPROVAL_CHANGED,
     EVENT_OPENED,
+    PICTURE_UNUSED_KEEP,
     SIGNAL_CHANGED,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -94,6 +97,9 @@ class GuestEngine:
         self.about: dict[str, str | None] = {"version": None, "commit": None}
         # Entity names in the language of Home Assistant, for the IDs of new entities
         self._entity_names: dict[str, str] = {}
+        # Photos of the integration deleted elsewhere in this run: a page opened
+        # before may still send one, which then just means no photo
+        self.gone_pictures: set[str] = set()
 
     # Life cycle
 
@@ -106,6 +112,10 @@ class GuestEngine:
         """
         if (stored := await self._store.async_load()) is not None:
             self.data = AccessData.from_dict(stored)
+        # A guest's photo is always one of the integration's own
+        for guest in self.data.guests.values():
+            if guest.picture is not None:
+                self.data.pictures.setdefault(guest.picture, dt_util.utcnow())
         self._entity_names = await async_get_translations(
             self.hass, self.hass.config.language, "entity", {DOMAIN}
         )
@@ -134,13 +144,32 @@ class GuestEngine:
             self._issues_active = True
             self._check_issues()
 
+        @callback
+        def _device_changed(event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
+            # A device name given in Home Assistant is the name dashboards show
+            if event.data["action"] != "update" or "name_by_user" not in event.data["changes"]:
+                return
+            device = dr.async_get(self.hass).async_get(event.data["device_id"])
+            if device is not None and any(ident[0] == DOMAIN for ident in device.identifiers):
+                self._notify()
+
+        async def _image_changed(change_type: str, item_id: str, _item: Any) -> None:
+            if change_type == CHANGE_REMOVED:
+                self._picture_gone(item_id)
+
         self._unsub_other.extend(
             [
                 self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, _registry_changed),
                 self.hass.bus.async_listen(ar.EVENT_AREA_REGISTRY_UPDATED, _registry_changed),
+                self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, _device_changed),
+                self.hass.data[IMAGE_UPLOAD_DOMAIN].async_add_listener(_image_changed),
+                async_track_time_interval(
+                    self.hass, self._collect_pictures, PICTURE_UNUSED_KEEP, cancel_on_shutdown=True
+                ),
                 async_at_started(self.hass, _started),
             ]
         )
+        self._collect_pictures()
 
     def _check_issues(self) -> None:
         if self._issues_active:
@@ -525,22 +554,55 @@ class GuestEngine:
         self._save()
         self._check_issues()
 
+    # Photos: images uploaded through the integration's own upload, and only those
+
     def has_picture(self, image_id: str) -> bool:
-        """Whether Home Assistant holds an uploaded image with this ID."""
-        images = self.hass.data.get(IMAGE_UPLOAD_DOMAIN)
-        return images is not None and image_id in images.data
+        """Whether this is one of the integration's photos and Home Assistant still has it."""
+        return (
+            image_id in self.data.pictures and image_id in self.hass.data[IMAGE_UPLOAD_DOMAIN].data
+        )
+
+    @callback
+    def async_add_picture(self, image_id: str) -> None:
+        """Note an image uploaded on the page as one of the integration's photos."""
+        self.data.pictures[image_id] = dt_util.utcnow()
+        self._save()
 
     @callback
     def _delete_picture(self, image_id: str) -> None:
-        """Delete a photo nobody uses any more from Home Assistant's images."""
+        """Delete one of the integration's photos that no guest uses any more."""
         if any(guest.picture == image_id for guest in self.data.guests.values()):
             return
-        if not self.has_picture(image_id):
+        if self.data.pictures.pop(image_id, None) is None:
+            # Not uploaded through Guest Access: someone else's image, never deleted here
             return
+        self._save()
         images = self.hass.data[IMAGE_UPLOAD_DOMAIN]
-        self.entry.async_create_background_task(
-            self.hass, images.async_delete_item(image_id), f"{DOMAIN} delete picture"
-        )
+        if image_id in images.data:
+            # Not bound to the entry, so a reload right after does not cancel it
+            self.hass.async_create_task(
+                images.async_delete_item(image_id), f"{DOMAIN} delete picture"
+            )
+
+    @callback
+    def _collect_pictures(self, _now: datetime | None = None) -> None:
+        """Delete photos uploaded on the page but never saved with a guest."""
+        now = dt_util.utcnow()
+        for image_id, uploaded in list(self.data.pictures.items()):
+            if now - uploaded > PICTURE_UNUSED_KEEP:
+                self._delete_picture(image_id)
+
+    @callback
+    def _picture_gone(self, image_id: str) -> None:
+        """An image was deleted elsewhere: a guest who showed it has no photo any more."""
+        if self.data.pictures.pop(image_id, None) is None:
+            return
+        self.gone_pictures.add(image_id)
+        for guest in list(self.data.guests.values()):
+            if guest.picture == image_id:
+                self.data.guests[guest.id] = replace(guest, picture=None)
+        self._save()
+        self._notify()
 
     @callback
     def async_save_settings(self, settings: Settings) -> None:

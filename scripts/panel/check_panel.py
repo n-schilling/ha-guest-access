@@ -289,7 +289,7 @@ class Api:
         form.add_field("file", png, filename="photo.png", content_type="image/png")
         headers = {"Authorization": f"Bearer {token}"}
         async with self.session.post(
-            self.base + "/api/image/upload", data=form, headers=headers
+            self.base + "/api/guest_access/picture", data=form, headers=headers
         ) as response:
             response.raise_for_status()
             return str((await response.json())["id"])
@@ -448,10 +448,6 @@ class Instance:
                     },
                 )
         store = _store(areas, datetime.now(TIME_ZONE))
-        photos = {"g_anna": ("A", (94, 129, 172)), "g_ben": ("B", (191, 97, 106))}
-        for guest in store["data"]["guests"]:
-            if guest["id"] in photos:
-                guest["picture"] = await api.upload(self.token, _avatar(*photos[guest["id"]]))
         (self.config / ".storage" / "guest_access").write_text(json.dumps(store))
         flow = await api.post(
             self.token, "/api/config/config_entries/flow", {"handler": "guest_access"}
@@ -460,6 +456,23 @@ class Instance:
         if result.get("type") != "create_entry" or result["result"]["state"] != "loaded":
             raise RuntimeError(f"Guest Access did not load: {result}")
         self.entry_id = result["result"]["entry_id"]
+        # Made-up photos, uploaded as the page does once the integration runs
+        photos = {"g_anna": ("A", (94, 129, 172)), "g_ben": ("B", (191, 97, 106))}
+        for guest in store["data"]["guests"]:
+            if guest["id"] in photos:
+                picture = await api.upload(self.token, _avatar(*photos[guest["id"]]))
+                profile = {key: value for key, value in guest.items() if key != "id"}
+                saved = await api.ws(
+                    self.token,
+                    {
+                        "type": "guest_access/save_guest",
+                        **profile,
+                        "guest_id": guest["id"],
+                        "picture": picture,
+                    },
+                )
+                if not saved["success"]:
+                    raise RuntimeError(f"Photo not saved: {saved}")
         # A user without administrator rights, for the access check
         created = await api.ws(
             self.token,

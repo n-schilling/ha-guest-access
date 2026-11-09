@@ -21,6 +21,7 @@ from .const import (
     MAX_LOG_GRID_MINUTES,
     MAX_LOG_KEEP_DAYS,
     MAX_LOG_KEEP_MONTHS,
+    MAX_NAME_LENGTH,
     MAX_NOTE_LENGTH,
     MAX_RESUME_MINUTES,
     MAX_VISIT_MINUTES,
@@ -196,6 +197,8 @@ class Guest:
         """Reject a guest the rules do not allow."""
         if not self.name.strip():
             raise ValueError("a guest needs a name")
+        if len(self.name) > MAX_NAME_LENGTH:
+            raise ValueError(f"a name has at most {MAX_NAME_LENGTH} characters")
         if not self.trackers:
             raise ValueError("a guest needs at least one tracker")
         if self.visit_minutes is not None and not 1 <= self.visit_minutes <= MAX_VISIT_MINUTES:
@@ -464,6 +467,9 @@ class AccessData:
     # The visit log: single visits, and per guest the totals per month ("2026-11")
     visits: list[Visit] = field(default_factory=list)
     months: dict[str, dict[str, MonthTotal]] = field(default_factory=dict)
+    # The photos this integration uploaded, by image ID, with the time of the upload;
+    # only these are guests' photos, and only these are ever deleted
+    pictures: dict[str, datetime] = field(default_factory=dict)
 
     def presence_of(self, guest_id: str) -> Presence:
         """The runtime state of a guest, created when missing."""
@@ -486,6 +492,9 @@ class AccessData:
                 for guest_id, totals in self.months.items()
                 if guest_id in self.guests
             },
+            "pictures": {
+                image_id: uploaded.isoformat() for image_id, uploaded in self.pictures.items()
+            },
         }
 
     @classmethod
@@ -504,5 +513,9 @@ class AccessData:
             months={
                 guest_id: {month: MonthTotal.from_dict(total) for month, total in totals.items()}
                 for guest_id, totals in data.get("months", {}).items()
+            },
+            pictures={
+                image_id: datetime.fromisoformat(uploaded)
+                for image_id, uploaded in data.get("pictures", {}).items()
             },
         )

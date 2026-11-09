@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, time, timedelta
+from typing import Any
 
 import pytest
 
@@ -201,3 +202,19 @@ def test_settings_ranges() -> None:
     settings = Settings((), (), 5, 30, 7, 2)
     assert Settings.from_dict(settings.as_dict()) == settings
     assert Settings.from_dict({}).resume_minutes == 10
+
+
+def test_guest_name_and_note_limits() -> None:
+    """A name has at most 100 characters, a note 2000, a photo is an image ID."""
+    from custom_components.guest_access.model import Guest
+
+    Guest("g", "x" * 100, ("device_tracker.t",), note="y" * 2000)
+    for wrong in (
+        {"name": "x" * 101},
+        {"note": "y" * 2001},
+        {"picture": "/api/image/serve/x/512x512"},
+    ):
+        values: dict[str, Any] = {"id": "g", "name": "Ben", "trackers": ("device_tracker.t",)}
+        values.update(wrong)
+        with pytest.raises(ValueError):
+            Guest(**values)

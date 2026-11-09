@@ -57,7 +57,7 @@ A guest is a profile with:
 
 | Field | Meaning |
 |---|---|
-| Name | shown on the page and in events |
+| Name | up to 100 characters; shown on the page and in events |
 | Trackers | one or more `device_tracker` entities of any integration (a Bluetooth beacon, a phone on Wi-Fi); the guest is home when one of them is `home`; `unknown` and `unavailable` never count |
 | Approval | `off`, `once until <datetime>`, `permanent until <datetime>`, `permanent` |
 | Time windows | optional for permanent approvals (with or without an end): any number of windows, each weekdays and a time range; the approval applies within any of them, e.g. Mon–Fri 08:00–18:00 and Sat 10:00–14:00 |
@@ -65,7 +65,7 @@ A guest is a profile with:
 | Rooms | the lockable rooms (see Room lock) the guest may enter on top of the unlockable ones, or everything |
 | Time per visit | 1 to 1440 minutes (default 60) or unlimited, counted from the arrival that starts the visit |
 | Visit log | off by default; see Visit log |
-| Photo | optional, an image uploaded to Home Assistant like a person's picture; shown by the guest's counts and status entities and in `guest_list`, so dashboards show the guest as they show a person |
+| Photo | optional, uploaded on the page into Home Assistant's images like a person's picture; shown by the guest's counts and status entities and in `guest_list`, so dashboards show the guest as they show a person |
 | Note | optional, up to 2000 characters, for administrators: shown on the page only, in no entity |
 
 ### When a guest counts
@@ -200,7 +200,7 @@ On the page, under residents and rooms:
 Guest Access stores only the profiles, the visit in progress and, for guests with a visit log, the rounded visits. It writes no guest names to the Home Assistant log.
 
 - The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
-- A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. A photo that is replaced or removed, and the photo of a deleted guest, is deleted. Leave the photo out if that is too much.
+- A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. Guest Access deletes only the photos uploaded through it: a replaced or removed photo, the photo of a deleted guest, an upload never saved with a guest (after an hour) and all of them when the integration is removed; an image of a person or an area is never taken as a guest's photo nor deleted. The photo's address is not recorded in the history. Leave the photo out if that is too much.
 - A guest's note stays on the page; it is in no entity, attribute, history or diagnostics, only in the store (and so in backups).
 - The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
 - Home Assistant still records the state of each guest's entities (counts, status, events) to the minute for as long as your recorder keeps history. If the history should not hold more than the visit log, exclude the guests' entities from the recorder, for example:
@@ -363,11 +363,15 @@ For administrators only; the page uses them, and so can a script with an adminis
 | Command | Parameters |
 |---|---|
 | `guest_access/subscribe` | none; sends the page's data now and after every change. Its content serves the page and is not part of this interface |
-| `guest_access/save_guest` | `guest_id` (to change a guest, left out for a new one), `name`, `trackers`, `approval` (`kind`, `until`, `windows`), `rooms`, `all_rooms`, `visit_minutes` (1–1440 or `null`), `grace_minutes` (1–240), `log_visits`, `picture` (ID of an image uploaded through `/api/image/upload`, or `null` to remove it), `note`; left out, `picture` and `note` keep their value; returns `guest_id` |
+| `guest_access/save_guest` | `guest_id` (to change a guest, left out for a new one), `name`, `trackers`, `approval` (`kind`, `until`, `windows`), `rooms`, `all_rooms`, `visit_minutes` (1–1440 or `null`), `grace_minutes` (1–240), `log_visits`, `picture` (ID from the photo upload below, or `null` to remove it), `note`; left out, `picture` and `note` keep their value; returns `guest_id` |
 | `guest_access/lock_guest` | `guest_id`; sets the approval to `off` |
 | `guest_access/delete_guest` | `guest_id`; removes the guest with its device and visit log |
 | `guest_access/delete_visits` | `guest_id`; deletes the guest's visit log |
 | `guest_access/save_settings` | `residents`, `rooms` (`area_id`, `door`), optionally `resume_minutes`, `log_grid_minutes`, `log_keep_days`, `log_keep_months` |
+
+### Photo upload
+
+`POST /api/guest_access/picture` with a multipart field `file` (PNG, JPEG or GIF), for administrators only, stores the image in Home Assistant's images and answers `{"id": "<image ID>"}`. Only such an ID is accepted as a guest's `picture`; an upload not saved with a guest within an hour is deleted.
 
 ### Store
 

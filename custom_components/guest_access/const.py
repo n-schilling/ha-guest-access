@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Final
 
 DOMAIN: Final = "guest_access"
@@ -28,10 +29,14 @@ DEFAULT_LOG_KEEP_DAYS: Final = 90
 MAX_LOG_KEEP_DAYS: Final = 3650
 DEFAULT_LOG_KEEP_MONTHS: Final = 13
 MAX_LOG_KEEP_MONTHS: Final = 120
+# A guest's name: shown on the page, as device name and in attributes
+MAX_NAME_LENGTH: Final = 100
 # A guest's note, for administrators on the page only
 MAX_NOTE_LENGTH: Final = 2000
 # A guest's photo is an image uploaded to Home Assistant, served in this size
 PICTURE_SIZE: Final = "512x512"
+# A photo uploaded on the page but not saved with a guest is deleted after this time
+PICTURE_UNUSED_KEEP: Final = timedelta(hours=1)
 # Written by scripts/deploy.sh: the commit the deployed files come from
 BUILD_FILE: Final = "BUILD"
 

@@ -146,13 +146,13 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
         configured = {room.area_id for room in engine.data.settings.rooms}
         if unknown := set(msg["rooms"]) - configured:
             raise ValueError(f"not a lockable room: {', '.join(sorted(unknown))}")
-        # Only an image uploaded to Home Assistant, not any address
-        if (
-            picture is not None
-            and picture != (old.picture if old else None)
-            and not engine.has_picture(picture)
-        ):
-            raise ValueError(f"no uploaded image {picture}")
+        if picture is not None and not engine.has_picture(picture):
+            if picture == (old.picture if old else None) or picture in engine.gone_pictures:
+                # The photo was deleted meanwhile: saving keeps the rest
+                picture = None
+            else:
+                # Only a photo uploaded through Guest Access, no other image or address
+                raise ValueError(f"no photo uploaded through Guest Access: {picture}")
         raw = msg["approval"]
         guest = Guest(
             id=guest_id or engine.new_guest_id(),

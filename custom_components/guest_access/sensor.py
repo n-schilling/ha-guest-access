@@ -57,6 +57,8 @@ class GuestStatusSensor(GuestEntity, SensorEntity):
     """Counts, time up, approval expired, home without approval, resuming or away."""
 
     _with_picture = True
+    # The photo's address is for dashboards now, not for the history
+    _unrecorded_attributes = frozenset({"entity_picture"})
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = [status.value for status in GuestStatus]

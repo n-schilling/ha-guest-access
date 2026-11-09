@@ -8,9 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- A photo per guest, uploaded on the page as Home Assistant's own images: the counts and status entities show it as `entity_picture`, `guest_list` as `picture`, the page in the list. A replaced or removed photo and the photo of a deleted guest are deleted; an upload that is not saved too.
+- A photo per guest, uploaded on the page through `POST /api/guest_access/picture` (administrators only) into Home Assistant's images: the counts and status entities show it as `entity_picture` (not recorded), `guest_list` as `picture`, the page in the list. Guest Access deletes only its own photos: replaced or removed ones, the photo of a deleted guest, uploads never saved (after an hour) and all of them when the integration is removed. A photo deleted elsewhere leaves the guest without one.
 - A note per guest for administrators, on the page only.
 - `save_guest` takes `picture` and `note`; left out, they keep their value.
+- A name has at most 100 characters.
+- A device name given in Home Assistant reaches "Guests home" at once, not only with the next change.
 
 ## [0.2.0] - unreleased
 

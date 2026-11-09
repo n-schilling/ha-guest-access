@@ -13,7 +13,9 @@ from datetime import timedelta
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
+import pytest
 from pytest_homeassistant.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant.typing import ClientSessionGenerator
 
 from homeassistant.components.websocket_api import DOMAIN as WS_DOMAIN
 from homeassistant.core import HomeAssistant
@@ -31,6 +33,12 @@ VIOLATION = "event.guest_access_room_violation"
 GUESTS_HOME = "binary_sensor.guest_access_guests_home"
 # What Home Assistant adds to every event entity; the rest is the event data
 EVENT_BASE = {"event_type", "event_types", "friendly_name"}
+
+
+@pytest.fixture
+def hass_config_dir(hass_tmp_config_dir: str) -> str:
+    """Uploaded images go to a directory of their own, not into the repository."""
+    return hass_tmp_config_dir
 
 
 def _engine(entry: MockConfigEntry) -> GuestEngine:
@@ -269,6 +277,8 @@ STORED_V1: dict[str, Any] = {
         }
     ],
     "months": {"0123456789abcdef0123456789abcdef": {"2026-11": {"visits": 1, "minutes": 90}}},
+    # The photos uploaded through Guest Access, with the time of the upload
+    "pictures": {"fedcba9876543210fedcba9876543210": "2026-11-02T08:00:00+00:00"},
 }
 
 
@@ -277,3 +287,35 @@ def test_store_format() -> None:
     assert STORAGE_KEY == "guest_access"
     assert STORAGE_VERSION == 1
     assert AccessData.from_dict(STORED_V1).as_dict() == STORED_V1
+
+
+async def test_photo_interface(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    hass_client: ClientSessionGenerator,
+    hass_tmp_config_dir: str,
+) -> None:
+    """The upload's address, and where a photo shows: counts, status and guest_list."""
+    import io
+
+    import aiohttp
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buffer, format="PNG")
+    form = aiohttp.FormData()
+    form.add_field("file", buffer.getvalue(), filename="p.png", content_type="image/png")
+    response = await (await hass_client()).post("/api/guest_access/picture", data=form)
+    assert response.status == 200
+    image_id = (await response.json())["id"]
+    engine = _engine(entry)
+    engine.async_save_guest(replace(engine.data.guests["anna"], picture=image_id))
+    await hass.async_block_till_done()
+    url = f"/api/image/serve/{image_id}/512x512"
+    for entity_id in ("binary_sensor.guest_anna_counts", "sensor.guest_anna_status"):
+        current = hass.states.get(entity_id)
+        assert current is not None
+        assert current.attributes["entity_picture"] == url
+    current = hass.states.get(GUESTS_HOME)
+    assert current is not None
+    assert current.attributes["guest_list"][0]["picture"] == url

@@ -604,3 +604,15 @@ async def test_guest_list(
     await hass.async_block_till_done()
     assert state(hass, STATUS) == "inactive"
     assert guest_list() == []
+
+
+async def test_device_name_reaches_attributes(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A device name given in Home Assistant shows in "Guests home" at once."""
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "anna"), entry.entry_id)
+    assert device is not None
+    dr.async_get(hass).async_update_device(device.id, name_by_user="Aunt Anna")
+    await hass.async_block_till_done()
+    assert attr(hass, GUESTS_HOME, "guests") == ["Aunt Anna"]
+    assert attr(hass, GUESTS_HOME, "guest_list")[0]["name"] == "Aunt Anna"

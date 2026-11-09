@@ -325,6 +325,8 @@ if (!customElements.get("guest-access-panel")) {
     }
 
     disconnectedCallback() {
+      // Leaving the page drops photos uploaded in an open form but not saved
+      this._dropUploads(this._form);
       if (this._unsub) {
         this._unsub.then((unsub) => unsub()).catch(() => {});
         this._unsub = null;
@@ -592,6 +594,7 @@ if (!customElements.get("guest-access-panel")) {
           await this._call({ type: "guest_access/delete_visits", guest_id: c.id });
         } else {
           await this._call({ type: "guest_access/delete_guest", guest_id: c.id });
+          this._dropUploads(this._form);
           this._form = null;
         }
       } catch {
@@ -655,14 +658,19 @@ if (!customElements.get("guest-access-panel")) {
       this._render();
     }
 
-    _close() {
-      const f = this._form;
-      if (f?.uploaded?.length) {
-        const kept = f.saved ? f.media.picture : null;
-        for (const id of f.uploaded) {
-          if (id !== kept) this._call({ type: "image/delete", image_id: id }).catch(() => {});
-        }
+    // Delete the photos a form uploaded but did not save; Guest Access also deletes
+    // them itself after an hour, this only does it at once
+    _dropUploads(f) {
+      if (!f?.uploaded?.length) return;
+      const kept = f.saved ? f.media.picture : null;
+      for (const id of f.uploaded) {
+        if (id !== kept) this._call({ type: "image/delete", image_id: id }).catch(() => {});
       }
+      f.uploaded = [];
+    }
+
+    _close() {
+      this._dropUploads(this._form);
       this._form = null;
       this._error = "";
       this._confirm = null;
@@ -988,8 +996,14 @@ if (!customElements.get("guest-access-panel")) {
         const file = input.files?.[0];
         if (!file) return;
         try {
-          f.media.picture = await this._upload(file);
-          f.uploaded.push(f.media.picture);
+          const id = await this._upload(file);
+          f.uploaded.push(id);
+          if (this._form !== f) {
+            // The form was closed while the photo was uploading
+            this._dropUploads(f);
+            return;
+          }
+          f.media.picture = id;
           this._error = "";
         } catch (err) {
           this._error = err?.message || String(err);
@@ -1020,12 +1034,21 @@ if (!customElements.get("guest-access-panel")) {
       );
     }
 
-    // Upload an image to Home Assistant, as the photo of a person is; its ID
+    // Upload a photo through Guest Access, into Home Assistant's images; its ID
     async _upload(file) {
       const form = new FormData();
       form.append("file", file);
-      const response = await this._hass.fetchWithAuth("/api/image/upload", { method: "POST", body: form });
-      if (!response.ok) throw new Error(await response.text());
+      const response = await this._hass.fetchWithAuth("/api/guest_access/picture", { method: "POST", body: form });
+      if (!response.ok) {
+        const body = await response.text();
+        let message = body;
+        try {
+          message = JSON.parse(body).message || body;
+        } catch {
+          // Not JSON: the text as it is
+        }
+        throw new Error(message);
+      }
       return (await response.json()).id;
     }
 
