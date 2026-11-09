@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - unreleased
+
+### Added
+
+- A photo per guest, uploaded on the page as Home Assistant's own images: the counts and status entities show it as `entity_picture`, `guest_list` as `picture`, the page in the list. A replaced or removed photo and the photo of a deleted guest are deleted; an upload that is not saved too.
+- A note per guest for administrators, on the page only.
+- `save_guest` takes `picture` and `note`; left out, they keep their value.
+
 ## [0.2.0] - unreleased
 
 ### Added

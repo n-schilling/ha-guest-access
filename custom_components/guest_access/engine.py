@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
+from homeassistant.components.image_upload import DOMAIN as IMAGE_UPLOAD_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_HOME, STATE_OFF, STATE_ON, Platform
 from homeassistant.core import (
@@ -387,6 +388,7 @@ class GuestEngine:
             shown.append(
                 {
                     "name": self.display_name(guest),
+                    "picture": guest.picture_url,
                     "status": status.value,
                     "status_entity": entities.async_get_entity_id(
                         Platform.SENSOR, DOMAIN, f"{guest.id}_status"
@@ -477,6 +479,8 @@ class GuestEngine:
         if old is not None and old.log_visits and not guest.log_visits:
             # No log means none at all: the one kept so far goes
             forget_log(self.data, guest.id)
+        if old is not None and old.picture not in (None, guest.picture):
+            self._delete_picture(old.picture)
         if old is None or old.approval != guest.approval:
             # First the change, then what follows from it (arrived, left); a new
             # guest's event waits until its entity is there
@@ -503,7 +507,9 @@ class GuestEngine:
     @callback
     def async_delete_guest(self, guest_id: str) -> None:
         """Remove a guest with the device and its entities."""
-        self.data.guests.pop(guest_id)
+        guest = self.data.guests.pop(guest_id)
+        if guest.picture is not None:
+            self._delete_picture(guest.picture)
         self.data.presence.pop(guest_id, None)
         self._queued.pop(guest_id, None)
         forget_log(self.data, guest_id)
@@ -518,6 +524,23 @@ class GuestEngine:
         self._evaluate()
         self._save()
         self._check_issues()
+
+    def has_picture(self, image_id: str) -> bool:
+        """Whether Home Assistant holds an uploaded image with this ID."""
+        images = self.hass.data.get(IMAGE_UPLOAD_DOMAIN)
+        return images is not None and image_id in images.data
+
+    @callback
+    def _delete_picture(self, image_id: str) -> None:
+        """Delete a photo nobody uses any more from Home Assistant's images."""
+        if any(guest.picture == image_id for guest in self.data.guests.values()):
+            return
+        if not self.has_picture(image_id):
+            return
+        images = self.hass.data[IMAGE_UPLOAD_DOMAIN]
+        self.entry.async_create_background_task(
+            self.hass, images.async_delete_item(image_id), f"{DOMAIN} delete picture"
+        )
 
     @callback
     def async_save_settings(self, settings: Settings) -> None:

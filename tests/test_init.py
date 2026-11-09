@@ -562,7 +562,13 @@ async def test_guest_list(
 
     # Approved but not home: shown as away, without an end
     assert guest_list() == [
-        {"name": "Anna", "status": "away", "status_entity": STATUS, "visit_ends": None}
+        {
+            "name": "Anna",
+            "picture": None,
+            "status": "away",
+            "status_entity": STATUS,
+            "visit_ends": None,
+        }
     ]
 
     hass.states.async_set(TRACKER, "home")
@@ -572,6 +578,7 @@ async def test_guest_list(
     assert guest_list() == [
         {
             "name": "Anna",
+            "picture": None,
             "status": "counting",
             "status_entity": STATUS,
             "visit_ends": ends.isoformat(),

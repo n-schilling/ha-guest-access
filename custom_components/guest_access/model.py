@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
 from enum import StrEnum
+import re
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -20,9 +21,14 @@ from .const import (
     MAX_LOG_GRID_MINUTES,
     MAX_LOG_KEEP_DAYS,
     MAX_LOG_KEEP_MONTHS,
+    MAX_NOTE_LENGTH,
     MAX_RESUME_MINUTES,
     MAX_VISIT_MINUTES,
+    PICTURE_SIZE,
 )
+
+# The ID Home Assistant gives an uploaded image
+_IMAGE_ID = re.compile(r"[0-9a-f]{32}")
 
 
 class ApprovalKind(StrEnum):
@@ -181,6 +187,10 @@ class Guest:
     grace_minutes: int = DEFAULT_GRACE_MINUTES
     # Keep a visit log: date, start and length of each visit on a grid; off by default
     log_visits: bool = False
+    # A photo: the ID of an image uploaded to Home Assistant, or None
+    picture: str | None = None
+    # A note for administrators; shown on the page only
+    note: str = ""
 
     def __post_init__(self) -> None:
         """Reject a guest the rules do not allow."""
@@ -192,6 +202,15 @@ class Guest:
             raise ValueError(f"the time per visit is between 1 and {MAX_VISIT_MINUTES} minutes")
         if not 1 <= self.grace_minutes <= MAX_GRACE_MINUTES:
             raise ValueError(f"the grace time is between 1 and {MAX_GRACE_MINUTES} minutes")
+        if self.picture is not None and not _IMAGE_ID.fullmatch(self.picture):
+            raise ValueError("a photo is the ID of an uploaded image")
+        if len(self.note) > MAX_NOTE_LENGTH:
+            raise ValueError(f"a note has at most {MAX_NOTE_LENGTH} characters")
+
+    @property
+    def picture_url(self) -> str | None:
+        """Where Home Assistant serves the photo, or None without one."""
+        return None if self.picture is None else f"/api/image/serve/{self.picture}/{PICTURE_SIZE}"
 
     @property
     def visit(self) -> timedelta | None:
@@ -215,6 +234,8 @@ class Guest:
             "visit_minutes": self.visit_minutes,
             "grace_minutes": self.grace_minutes,
             "log_visits": self.log_visits,
+            "picture": self.picture,
+            "note": self.note,
         }
 
     @classmethod
@@ -230,6 +251,8 @@ class Guest:
             visit_minutes=data.get("visit_minutes", DEFAULT_VISIT_MINUTES),
             grace_minutes=data.get("grace_minutes", DEFAULT_GRACE_MINUTES),
             log_visits=bool(data.get("log_visits", False)),
+            picture=data.get("picture"),
+            note=str(data.get("note", "")),
         )
 
 

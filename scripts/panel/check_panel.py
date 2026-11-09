@@ -21,6 +21,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+import io
 import json
 from pathlib import Path
 import random
@@ -34,6 +35,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import aiohttp
+from PIL import Image, ImageDraw, ImageFont
 from playwright.async_api import Browser, Page, async_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -225,6 +227,17 @@ def _store(areas: dict[str, str], now: datetime) -> dict[str, Any]:
     }
 
 
+def _avatar(initial: str, color: tuple[int, int, int]) -> bytes:
+    """A made-up photo: an initial on a colour, as PNG."""
+    image = Image.new("RGB", (256, 256), color)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=150)
+    draw.text((128, 128), initial, fill=(255, 255, 255), font=font, anchor="mm")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 class Api:
     """REST and WebSocket access to the throwaway instance."""
 
@@ -269,6 +282,17 @@ class Api:
         """A REST call as the user of the token."""
         headers = {"Authorization": f"Bearer {token}"}
         return await self._json("post", path, headers=headers, json=body or {})
+
+    async def upload(self, token: str, png: bytes) -> str:
+        """Upload an image as the page does; its ID."""
+        form = aiohttp.FormData()
+        form.add_field("file", png, filename="photo.png", content_type="image/png")
+        headers = {"Authorization": f"Bearer {token}"}
+        async with self.session.post(
+            self.base + "/api/image/upload", data=form, headers=headers
+        ) as response:
+            response.raise_for_status()
+            return str((await response.json())["id"])
 
     async def ws(self, token: str, message: dict[str, Any]) -> dict[str, Any]:
         """One WebSocket command; the whole result message, success or not."""
@@ -424,6 +448,10 @@ class Instance:
                     },
                 )
         store = _store(areas, datetime.now(TIME_ZONE))
+        photos = {"g_anna": ("A", (94, 129, 172)), "g_ben": ("B", (191, 97, 106))}
+        for guest in store["data"]["guests"]:
+            if guest["id"] in photos:
+                guest["picture"] = await api.upload(self.token, _avatar(*photos[guest["id"]]))
         (self.config / ".storage" / "guest_access").write_text(json.dumps(store))
         flow = await api.post(
             self.token, "/api/config/config_entries/flow", {"handler": "guest_access"}
@@ -714,6 +742,70 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
         await _list(page)
 
     await checks.run("saving an empty guest shows the error and saves nothing", save_error_is_shown)
+
+    async def images() -> set[str]:
+        listed = await api.ws(instance.token, {"type": "image/list"})
+        return {item["id"] for item in listed["result"]}
+
+    async def photo_and_note() -> None:
+        before = await images()
+        await page.locator(f"{PANEL} [data-edit='g_clean']").click()
+        await page.locator(f"{PANEL} input[type=file]").set_input_files(
+            {"name": "c.png", "mimeType": "image/png", "buffer": _avatar("C", (163, 190, 140))}
+        )
+        await page.locator(f"{PANEL} .media img.avatar").wait_for()
+        await page.get_by_role("textbox", name="Note").fill("Key is in the mailbox")
+        await page.get_by_role("button", name="Save").click()
+        await _list(page)
+
+        async def saved() -> bool:
+            guest = _guest(await _snapshot(api, instance), "g_clean")
+            return (
+                guest is not None
+                and guest["note"] == "Key is in the mailbox"
+                and bool(guest["picture"])
+            )
+
+        await _until(saved, "photo and note in the integration")
+        guest = _guest(await _snapshot(api, instance), "g_clean")
+        assert guest is not None
+        expect(await images() == before | {guest["picture"]}, "an image too many or too few")
+        await page.locator(f"{PANEL} [data-edit='g_clean'] img.photo").wait_for()
+        state = await api.ws(instance.token, {"type": "get_states"})
+        pictures = {
+            item["entity_id"]: item["attributes"].get("entity_picture")
+            for item in state["result"]
+            if item["entity_id"].startswith(
+                ("binary_sensor.guest_cleaning", "sensor.guest_cleaning")
+            )
+        }
+        expect(
+            pictures.get("binary_sensor.guest_cleaning_service_counts")
+            == f"/api/image/serve/{guest['picture']}/512x512",
+            str(pictures),
+        )
+
+    await checks.run("a photo and a note reach the integration and the dashboards", photo_and_note)
+
+    async def cancelled_upload_leaves_nothing() -> None:
+        before = await images()
+        await page.locator(f"{PANEL} [data-edit='g_grandma']").click()
+        await page.locator(f"{PANEL} input[type=file]").set_input_files(
+            {"name": "g.png", "mimeType": "image/png", "buffer": _avatar("G", (180, 142, 173))}
+        )
+        await page.locator(f"{PANEL} .media img.avatar").wait_for()
+        expect(len(await images()) == len(before) + 1, "the upload did not arrive")
+        await page.get_by_role("button", name="Cancel").click()
+        await _list(page)
+
+        async def cleaned() -> bool:
+            return await images() == before
+
+        await _until(cleaned, "the cancelled upload to be deleted")
+
+    await checks.run(
+        "a photo uploaded and then cancelled is deleted again", cancelled_upload_leaves_nothing
+    )
 
     async def phone_and_dark() -> None:
         for scheme in ("light", "dark"):

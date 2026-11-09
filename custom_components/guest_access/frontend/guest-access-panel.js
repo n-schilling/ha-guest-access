@@ -87,6 +87,12 @@ if (!customElements.get("guest-access-panel")) {
       field_log_keep_days: "Keep single visits",
       field_log_keep_months: "Keep monthly totals",
       logSection: "Visit log",
+      mediaSection: "Photo and note",
+      photoHelp: "Shown on dashboards, as a person's picture is.",
+      choosePhoto: "Choose photo",
+      removePhoto: "Remove photo",
+      field_note: "Note",
+      help_note: "Only administrators see it, here on this page.",
       logOffNote: "Saving deletes the visit log kept so far.",
       logRunning: "Visit running since {time}",
       logMonth: "This month: {visits}, {hours} h",
@@ -179,6 +185,12 @@ if (!customElements.get("guest-access-panel")) {
       field_log_keep_days: "Einzelne Besuche aufbewahren",
       field_log_keep_months: "Monatssummen aufbewahren",
       logSection: "Besuchsprotokoll",
+      mediaSection: "Foto und Notiz",
+      photoHelp: "Erscheint auf Dashboards, wie das Bild einer Person.",
+      choosePhoto: "Foto wählen",
+      removePhoto: "Foto entfernen",
+      field_note: "Notiz",
+      help_note: "Sehen nur Administratoren, hier auf dieser Seite.",
       logOffNote: "Beim Speichern wird das bisherige Besuchsprotokoll gelöscht.",
       logRunning: "Besuch läuft seit {time}",
       logMonth: "Dieser Monat: {visits}, {hours} h",
@@ -220,6 +232,8 @@ if (!customElements.get("guest-access-panel")) {
   };
   const withSeconds = (time) => (time && time.length === 5 ? `${time}:00` : time);
   const withoutSeconds = (time) => (time || "").slice(0, 5);
+  // A photo is an image uploaded to Home Assistant, served by its ID
+  const pictureUrl = (id) => `/api/image/serve/${id}/512x512`;
 
   const STYLE = `
     :host { display: block; height: 100vh; height: 100dvh; background: var(--primary-background-color);
@@ -250,6 +264,13 @@ if (!customElements.get("guest-access-panel")) {
     .item .icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center;
       justify-content: center; flex: none; }
     .item .icon ha-icon { --mdc-icon-size: 24px; }
+    .item .photo { object-fit: cover; }
+    .media { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap; }
+    .media .avatar { width: 96px; height: 96px; border-radius: 50%; flex: none; object-fit: cover;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--secondary-background-color); color: var(--secondary-text-color); }
+    .media .avatar ha-icon { --mdc-icon-size: 48px; }
+    .media .media-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
     .item .text { flex: 1; min-width: 0; }
     .item .headline { font-size: var(--ha-font-size-l, 16px); font-weight: var(--ha-font-weight-medium, 500);
       line-height: 24px; }
@@ -488,8 +509,12 @@ if (!customElements.get("guest-access-panel")) {
           const guestRooms = guest.all_rooms ? this._t("allRooms") : this._rooms(guest.rooms);
           return `
             <div class="item" data-edit="${esc(guest.id)}" role="button" tabindex="0">
-              <div class="icon" style="color:${color};background:color-mix(in srgb, ${color} 15%, transparent)">
-                <ha-icon icon="${icon}"></ha-icon></div>
+              ${
+                guest.picture
+                  ? `<img class="icon photo" alt="" src="${esc(pictureUrl(guest.picture))}">`
+                  : `<div class="icon" style="color:${color};background:color-mix(in srgb, ${color} 15%, transparent)">
+                <ha-icon icon="${icon}"></ha-icon></div>`
+              }
               <div class="text">
                 <div class="headline">${esc(guest.name)} · ${esc(this._statusText(guest))}</div>
                 <div class="supporting">${esc(this._approvalText(guest))}</div>
@@ -604,6 +629,9 @@ if (!customElements.get("guest-access-panel")) {
         },
         log: { log_visits: guest?.log_visits ?? false },
         wasLogging: guest?.log_visits ?? false,
+        media: { picture: guest?.picture ?? null, note: guest?.note ?? "" },
+        // Images uploaded while the form is open; the ones not saved are deleted
+        uploaded: [],
       };
       this._error = "";
       this._confirm = null;
@@ -628,6 +656,13 @@ if (!customElements.get("guest-access-panel")) {
     }
 
     _close() {
+      const f = this._form;
+      if (f?.uploaded?.length) {
+        const kept = f.saved ? f.media.picture : null;
+        for (const id of f.uploaded) {
+          if (id !== kept) this._call({ type: "image/delete", image_id: id }).catch(() => {});
+        }
+      }
       this._form = null;
       this._error = "";
       this._confirm = null;
@@ -743,6 +778,8 @@ if (!customElements.get("guest-access-panel")) {
           ),
         ),
       );
+
+      content.append(this._mediaCard(f));
 
       const withEnd = f.approval.kind === "once" || f.approval.kind === "until";
       const approvalSchema = [
@@ -930,6 +967,68 @@ if (!customElements.get("guest-access-panel")) {
       return this._card(this._t("logSection"), ...children);
     }
 
+    _mediaCard(f) {
+      const row = document.createElement("div");
+      row.className = "media";
+      let avatar;
+      if (f.media.picture) {
+        avatar = document.createElement("img");
+        avatar.src = pictureUrl(f.media.picture);
+        avatar.alt = "";
+      } else {
+        avatar = document.createElement("div");
+        avatar.innerHTML = `<ha-icon icon="mdi:account"></ha-icon>`;
+      }
+      avatar.className = "avatar";
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg,image/gif";
+      input.hidden = true;
+      input.addEventListener("change", async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        try {
+          f.media.picture = await this._upload(file);
+          f.uploaded.push(f.media.picture);
+          this._error = "";
+        } catch (err) {
+          this._error = err?.message || String(err);
+        }
+        this._render();
+      });
+      const actions = document.createElement("div");
+      actions.className = "media-actions";
+      actions.append(input, this._button(this._t("choosePhoto"), () => input.click()));
+      if (f.media.picture) {
+        actions.append(
+          this._button(this._t("removePhoto"), () => {
+            f.media.picture = null;
+            this._render();
+          }),
+        );
+      }
+      actions.append(this._note(this._t("photoHelp")));
+      row.append(avatar, actions);
+      return this._card(
+        this._t("mediaSection"),
+        row,
+        this._haForm(
+          [{ name: "note", selector: { text: { multiline: true } } }],
+          { note: f.media.note },
+          (value) => (f.media.note = value.note ?? ""),
+        ),
+      );
+    }
+
+    // Upload an image to Home Assistant, as the photo of a person is; its ID
+    async _upload(file) {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await this._hass.fetchWithAuth("/api/image/upload", { method: "POST", body: form });
+      if (!response.ok) throw new Error(await response.text());
+      return (await response.json()).id;
+    }
+
     _exportCsv(guest) {
       const lang = this._hass.locale?.language || undefined;
       const rows = [this._t("csvHeader")];
@@ -976,10 +1075,13 @@ if (!customElements.get("guest-access-panel")) {
         visit_minutes: f.rooms.unlimited ? null : Number(f.rooms.visit_minutes) || 60,
         grace_minutes: Number(f.approval.grace) || 15,
         log_visits: !!f.log.log_visits,
+        picture: f.media.picture,
+        note: (f.media.note || "").trim(),
       };
       if (f.id) message.guest_id = f.id;
       try {
         await this._call(message);
+        f.saved = true;
         this._close();
       } catch {
         // Shown on the page

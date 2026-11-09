@@ -72,6 +72,9 @@ async def async_get_config_entry_diagnostics(
             "visit_minutes": guest.visit_minutes,
             "grace_minutes": guest.grace_minutes,
             "log_visits": guest.log_visits,
+            # Whether there is a photo and a note, not what they show or say
+            "picture": guest.picture is not None,
+            "note": bool(guest.note),
             "presence": {
                 "counting": presence.counting,
                 "arrived_minutes": _minutes(presence.arrived, now),

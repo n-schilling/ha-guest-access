@@ -12,7 +12,7 @@ The guests with their state and approval, made up for these pictures:
 
 <img src="docs/screenshots/guests.png" alt="List of guests: two count as home, one is locked, two are away" width="700">
 
-A guest with a key tag as tracker and two weekly time windows:
+A guest's form: a key tag as tracker, photo and note, the approval with two weekly time windows:
 
 <img src="docs/screenshots/guest.png" alt="Form of a guest: name, trackers, approval, grace time and time windows" width="700">
 
@@ -65,6 +65,8 @@ A guest is a profile with:
 | Rooms | the lockable rooms (see Room lock) the guest may enter on top of the unlockable ones, or everything |
 | Time per visit | 1 to 1440 minutes (default 60) or unlimited, counted from the arrival that starts the visit |
 | Visit log | off by default; see Visit log |
+| Photo | optional, an image uploaded to Home Assistant like a person's picture; shown by the guest's counts and status entities and in `guest_list`, so dashboards show the guest as they show a person |
+| Note | optional, up to 2000 characters, for administrators: shown on the page only, in no entity |
 
 ### When a guest counts
 
@@ -198,6 +200,8 @@ On the page, under residents and rooms:
 Guest Access stores only the profiles, the visit in progress and, for guests with a visit log, the rounded visits. It writes no guest names to the Home Assistant log.
 
 - The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
+- A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. A photo that is replaced or removed, and the photo of a deleted guest, is deleted. Leave the photo out if that is too much.
+- A guest's note stays on the page; it is in no entity, attribute, history or diagnostics, only in the store (and so in backups).
 - The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
 - Home Assistant still records the state of each guest's entities (counts, status, events) to the minute for as long as your recorder keeps history. If the history should not hold more than the visit log, exclude the guests' entities from the recorder, for example:
 
@@ -215,7 +219,7 @@ Guest Access stores only the profiles, the visit in progress and, for guests wit
 
 ### Diagnostics
 
-**Settings → Devices & services → Guest Access → ⋮ → Download diagnostics** gives the settings, every guest with status, approval, rooms and visit state, the state of each tracker, resident and door, and the open repair kinds. Names, entity IDs and areas are replaced by placeholders (Guest 1, Room 1), times by minutes from now and the visit log by its size, so the file can be attached to an issue as it is.
+**Settings → Devices & services → Guest Access → ⋮ → Download diagnostics** gives the settings, every guest with status, approval, rooms and visit state, whether it has a photo and a note (not what they show or say), the state of each tracker, resident and door, and the open repair kinds. Names, entity IDs and areas are replaced by placeholders (Guest 1, Room 1), times by minutes from now and the visit log by its size, so the file can be attached to an issue as it is.
 
 ### Repairs
 
@@ -325,8 +329,8 @@ IDs as created in English; Home Assistant takes the entity name in its own langu
 | `binary_sensor.guest_access_only_guests_home` | `<entry>_only_guests_home` | `on` while guests count and no resident is home |
 | `sensor.guest_access_guests_home_since` | `<entry>_guests_home_since` | earliest arrival of the guests who count, else unknown |
 | `event.guest_access_room_violation` | `<entry>_room_violation` | event type `opened` |
-| `binary_sensor.guest_<name>_counts` | `<guest>_counts` | `on` while the guest counts |
-| `sensor.guest_<name>_status` | `<guest>_status` | `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive` |
+| `binary_sensor.guest_<name>_counts` | `<guest>_counts` | `on` while the guest counts; `entity_picture`: the guest's photo |
+| `sensor.guest_<name>_status` | `<guest>_status` | `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive`; `entity_picture`: the guest's photo |
 | `sensor.guest_<name>_visit_ends` | `<guest>_visit_ends` | end of the visit while the guest counts with a time per visit, else unknown |
 | `sensor.guest_<name>_hours_this_month` | `<guest>_month_hours` | hours of the finished visits this month; unknown without a visit log; disabled by default |
 | `event.guest_<name>_activity` | `<guest>_activity` | event types below |
@@ -350,7 +354,7 @@ IDs as created in English; Home Assistant takes the entity name in its own langu
 |---|---|
 | `guests` | names of the guests who count |
 | `free_rooms`, `locked_rooms` | names of the lockable rooms that are free or locked right now |
-| `guest_list` | every guest but inactive ones, sorted by name: `name`, `status` (as the status sensor), `status_entity` (its entity ID), `visit_ends` (while the guest counts with time left or time up, else `null`) |
+| `guest_list` | every guest but inactive ones, sorted by name: `name`, `picture` (address of the photo or `null`), `status` (as the status sensor), `status_entity` (its entity ID), `visit_ends` (while the guest counts with time left or time up, else `null`) |
 
 ### WebSocket commands
 
@@ -359,7 +363,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 | Command | Parameters |
 |---|---|
 | `guest_access/subscribe` | none; sends the page's data now and after every change. Its content serves the page and is not part of this interface |
-| `guest_access/save_guest` | `guest_id` (to change a guest, left out for a new one), `name`, `trackers`, `approval` (`kind`, `until`, `windows`), `rooms`, `all_rooms`, `visit_minutes` (1–1440 or `null`), `grace_minutes` (1–240), `log_visits`; returns `guest_id` |
+| `guest_access/save_guest` | `guest_id` (to change a guest, left out for a new one), `name`, `trackers`, `approval` (`kind`, `until`, `windows`), `rooms`, `all_rooms`, `visit_minutes` (1–1440 or `null`), `grace_minutes` (1–240), `log_visits`, `picture` (ID of an image uploaded through `/api/image/upload`, or `null` to remove it), `note`; left out, `picture` and `note` keep their value; returns `guest_id` |
 | `guest_access/lock_guest` | `guest_id`; sets the approval to `off` |
 | `guest_access/delete_guest` | `guest_id`; removes the guest with its device and visit log |
 | `guest_access/delete_visits` | `guest_id`; deletes the guest's visit log |

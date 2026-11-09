@@ -56,6 +56,8 @@ class VisitEndsSensor(GuestEntity, SensorEntity):
 class GuestStatusSensor(GuestEntity, SensorEntity):
     """Counts, time up, approval expired, home without approval, resuming or away."""
 
+    _with_picture = True
+
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = [status.value for status in GuestStatus]
 

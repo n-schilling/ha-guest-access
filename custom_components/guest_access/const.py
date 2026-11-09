@@ -28,6 +28,10 @@ DEFAULT_LOG_KEEP_DAYS: Final = 90
 MAX_LOG_KEEP_DAYS: Final = 3650
 DEFAULT_LOG_KEEP_MONTHS: Final = 13
 MAX_LOG_KEEP_MONTHS: Final = 120
+# A guest's note, for administrators on the page only
+MAX_NOTE_LENGTH: Final = 2000
+# A guest's photo is an image uploaded to Home Assistant, served in this size
+PICTURE_SIZE: Final = "512x512"
 # Written by scripts/deploy.sh: the commit the deployed files come from
 BUILD_FILE: Final = "BUILD"
 

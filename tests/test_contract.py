@@ -198,6 +198,7 @@ async def test_room_violation_and_summary(
         "guest_list": [
             {
                 "name": "Anna",
+                "picture": None,
                 "status": "counting",
                 "status_entity": "sensor.guest_anna_status",
                 "visit_ends": ends.replace(microsecond=0).isoformat(),
@@ -244,6 +245,8 @@ STORED_V1: dict[str, Any] = {
             "visit_minutes": None,
             "grace_minutes": 15,
             "log_visits": True,
+            "picture": "fedcba9876543210fedcba9876543210",
+            "note": "Brings the dog",
         }
     ],
     "presence": {

@@ -54,6 +54,9 @@ class HubEntity(GuestAccessEntity):
 class GuestEntity(GuestAccessEntity):
     """An entity of a guest's device."""
 
+    # Counts and status show the guest's photo, as a person shows its picture
+    _with_picture = False
+
     def __init__(self, engine: GuestEngine, guest_id: str, key: str, platform: Platform) -> None:
         """Initialize the entity.
 
@@ -87,6 +90,14 @@ class GuestEntity(GuestAccessEntity):
     def available(self) -> bool:
         """Available while the guest exists."""
         return self.engine.guest(self.guest_id) is not None
+
+    @property
+    def entity_picture(self) -> str | None:
+        """The guest's photo, on the entities a dashboard shows a guest by."""
+        if not self._with_picture:
+            return super().entity_picture
+        guest = self.engine.guest(self.guest_id)
+        return None if guest is None else guest.picture_url
 
     @callback
     def _changed(self) -> None:

@@ -124,6 +124,9 @@ def ws_subscribe(hass: HomeAssistant, connection: ActiveConnection, msg: dict[st
             probatio.Coerce(int), probatio.Range(1, MAX_GRACE_MINUTES)
         ),
         probatio.Optional("log_visits", default=False): cv.boolean,
+        # Left out, a guest keeps its photo and note; None removes the photo
+        probatio.Optional("picture"): probatio.Any(None, cv.string),
+        probatio.Optional("note"): cv.string,
     }
 )
 @callback
@@ -132,14 +135,24 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
     if (engine := _engine(hass, connection, msg["id"])) is None:
         return
     guest_id = msg.get("guest_id")
-    if guest_id is not None and engine.guest(guest_id) is None:
+    old = None if guest_id is None else engine.guest(guest_id)
+    if guest_id is not None and old is None:
         connection.send_error(msg["id"], ERR_NOT_FOUND, f"no guest {guest_id}")
         return
+    picture = msg.get("picture", old.picture if old else None)
+    note = msg.get("note", old.note if old else "")
     try:
         _check_domain(msg["trackers"], "device_tracker", "trackers")
         configured = {room.area_id for room in engine.data.settings.rooms}
         if unknown := set(msg["rooms"]) - configured:
             raise ValueError(f"not a lockable room: {', '.join(sorted(unknown))}")
+        # Only an image uploaded to Home Assistant, not any address
+        if (
+            picture is not None
+            and picture != (old.picture if old else None)
+            and not engine.has_picture(picture)
+        ):
+            raise ValueError(f"no uploaded image {picture}")
         raw = msg["approval"]
         guest = Guest(
             id=guest_id or engine.new_guest_id(),
@@ -158,6 +171,8 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
             visit_minutes=msg["visit_minutes"],
             grace_minutes=msg["grace_minutes"],
             log_visits=msg["log_visits"],
+            picture=picture,
+            note=note.strip(),
         )
     except ValueError as err:
         connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))

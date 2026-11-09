@@ -37,6 +37,8 @@ async def async_setup_entry(
 class GuestCountsSensor(GuestEntity, BinarySensorEntity):
     """On while the guest counts as present."""
 
+    _with_picture = True
+
     _attr_device_class = BinarySensorDeviceClass.PRESENCE
 
     def __init__(self, engine: GuestEngine, guest_id: str) -> None:
