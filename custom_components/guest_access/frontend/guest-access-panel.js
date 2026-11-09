@@ -2,6 +2,10 @@
 // approve and lock them, and set the residents and the lockable rooms. Every
 // change goes to the integration over the WebSocket API; the list follows the
 // integration's state live.
+//
+// The page is built from Home Assistant's own elements (top app bar, cards,
+// buttons, alerts and ha-form with selectors), so it looks and behaves like the
+// rest of the UI. An edit opens as a subpage with a back arrow.
 
 if (!customElements.get("guest-access-panel")) {
   const TEXTS = {
@@ -9,111 +13,146 @@ if (!customElements.get("guest-access-panel")) {
       title: "Guest Access",
       guests: "Guests",
       addGuest: "Add guest",
-      noGuests: "No guests yet.",
+      noGuests: "No guests yet. A guest counts as home only with an approval.",
       settings: "Residents and rooms",
       edit: "Edit",
       lock: "Lock",
-      lockConfirm: "Lock {name}? The guest no longer counts.",
+      lockConfirm: "Lock {name}? The guest no longer counts and can no longer disarm the alarm system.",
       delete: "Delete",
       deleteConfirm: "Delete {name} with the device and its entities?",
+      confirm: "Confirm",
       save: "Save",
       cancel: "Cancel",
-      name: "Name",
-      trackers: "Trackers",
-      addTracker: "Add tracker",
-      approval: "Approval",
+      back: "Back",
+      field_name: "Name",
+      field_trackers: "Trackers",
+      field_kind: "Approval",
+      field_until: "Until",
+      field_grace: "Grace time",
+      field_all_rooms: "All rooms",
+      field_rooms: "Rooms on top of the living area",
+      field_visit: "Time per visit",
+      field_residents: "Residents",
+      field_area: "Area",
+      field_door: "Door contact",
+      field_weekdays: "Weekdays",
+      field_start: "From",
+      field_end: "To",
+      help_trackers: "The guest is home when one of them is home.",
+      help_grace: "A return within this time continues the visit; afterwards a once approval ends.",
+      help_residents: "The room lock applies only while none of them is home.",
       kind_off: "Locked",
       kind_once: "Once until",
       kind_until: "Permanent until",
       kind_permanent: "Permanent",
-      until: "Until",
       expired: "expired",
-      windows: "Time windows (none: at any time)",
+      approvalSection: "Approval",
+      roomsSection: "Rooms and time",
+      windows: "Time windows",
+      windowsHelp: "Without a time window the approval applies at any time.",
       addWindow: "Add time window",
-      from: "From",
-      to: "To",
-      grace: "Grace time (min): a return within it continues the visit",
-      rooms: "Rooms on top of the living area",
-      allRooms: "All rooms",
+      removeWindow: "Remove time window",
+      addRoom: "Add room",
+      removeRoom: "Remove room",
+      lockableRooms: "Lockable rooms",
+      roomsHelp: "A lockable room is an area with exactly one door contact.",
       noRooms: "No lockable rooms set yet.",
-      visit: "Time per visit",
+      allRooms: "all rooms",
       unlimited: "unlimited",
       minutes: "{n} min",
-      status_counting: "Counts",
+      status_counting: "Counts as home",
       status_time_up: "Time up",
       status_approval_expired: "Approval expired",
       status_not_approved: "Home without approval",
       status_resuming: "Waiting after restart",
       status_away: "Away",
-      visitEnds: "visit ends {time}",
+      visitEnds: "until {time}",
       residents: "Residents",
-      lockableRooms: "Lockable rooms",
-      area: "Area",
-      door: "Door contact",
-      addRoom: "Add room",
-      remove: "Remove",
-      lockActive: "Room lock active. Locked: {locked}. Free: {free}.",
+      lockActive: "Room lock active: only guests are home. Locked: {locked}. Free: {free}.",
       lockOff: "Room lock off: a resident is home or no guest counts.",
       none: "none",
       error: "Error: {message}",
-      weekdays: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+      weekdays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      weekdaysShort: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
     },
     de: {
       title: "Guest Access",
       guests: "Gäste",
       addGuest: "Gast hinzufügen",
-      noGuests: "Noch keine Gäste.",
+      noGuests: "Noch keine Gäste. Ein Gast zählt nur mit Freigabe als daheim.",
       settings: "Bewohner und Räume",
       edit: "Bearbeiten",
       lock: "Sperren",
-      lockConfirm: "{name} sperren? Der Gast zählt dann nicht mehr.",
+      lockConfirm: "{name} sperren? Der Gast zählt dann nicht mehr und kann die Alarmanlage nicht mehr entschärfen.",
       delete: "Löschen",
       deleteConfirm: "{name} mit Gerät und Entitäten löschen?",
+      confirm: "Bestätigen",
       save: "Speichern",
       cancel: "Abbrechen",
-      name: "Name",
-      trackers: "Tracker",
-      addTracker: "Tracker hinzufügen",
-      approval: "Freigabe",
+      back: "Zurück",
+      field_name: "Name",
+      field_trackers: "Tracker",
+      field_kind: "Freigabe",
+      field_until: "Bis",
+      field_grace: "Kulanzzeit",
+      field_all_rooms: "Alle Räume",
+      field_rooms: "Räume zusätzlich zum Wohnbereich",
+      field_visit: "Dauer je Besuch",
+      field_residents: "Bewohner",
+      field_area: "Bereich",
+      field_door: "Türkontakt",
+      field_weekdays: "Wochentage",
+      field_start: "Von",
+      field_end: "Bis",
+      help_trackers: "Der Gast ist daheim, sobald einer davon daheim ist.",
+      help_grace: "Wer in dieser Zeit zurückkommt, setzt den Besuch fort; danach endet eine einmalige Freigabe.",
+      help_residents: "Die Raumsperre gilt nur, solange keiner von ihnen daheim ist.",
       kind_off: "Gesperrt",
       kind_once: "Einmalig bis",
       kind_until: "Dauerhaft bis",
       kind_permanent: "Dauerhaft",
-      until: "Bis",
       expired: "abgelaufen",
-      windows: "Zeitfenster (keins: jederzeit)",
+      approvalSection: "Freigabe",
+      roomsSection: "Räume und Zeit",
+      windows: "Zeitfenster",
+      windowsHelp: "Ohne Zeitfenster gilt die Freigabe jederzeit.",
       addWindow: "Zeitfenster hinzufügen",
-      from: "Von",
-      to: "Bis",
-      grace: "Kulanzzeit (min): wer in ihr zurückkommt, setzt den Besuch fort",
-      rooms: "Räume zusätzlich zum Wohnbereich",
-      allRooms: "Alle Räume",
+      removeWindow: "Zeitfenster entfernen",
+      addRoom: "Raum hinzufügen",
+      removeRoom: "Raum entfernen",
+      lockableRooms: "Sperrbare Räume",
+      roomsHelp: "Sperrbar ist ein Bereich mit genau einem Türkontakt.",
       noRooms: "Noch keine sperrbaren Räume festgelegt.",
-      visit: "Dauer je Besuch",
+      allRooms: "alle Räume",
       unlimited: "unbegrenzt",
       minutes: "{n} min",
-      status_counting: "Zählt",
+      status_counting: "Zählt als daheim",
       status_time_up: "Zeit um",
       status_approval_expired: "Freigabe abgelaufen",
       status_not_approved: "Daheim ohne Freigabe",
       status_resuming: "Wartet nach Neustart",
       status_away: "Weg",
-      visitEnds: "Besuch endet {time}",
+      visitEnds: "bis {time}",
       residents: "Bewohner",
-      lockableRooms: "Sperrbare Räume",
-      area: "Bereich",
-      door: "Türkontakt",
-      addRoom: "Raum hinzufügen",
-      remove: "Entfernen",
-      lockActive: "Raumsperre aktiv. Gesperrt: {locked}. Frei: {free}.",
+      lockActive: "Raumsperre aktiv: nur Gäste daheim. Gesperrt: {locked}. Frei: {free}.",
       lockOff: "Raumsperre aus: ein Bewohner ist daheim oder kein Gast zählt.",
       none: "keine",
       error: "Fehler: {message}",
-      weekdays: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+      weekdays: ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+      weekdaysShort: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
     },
   };
   const VISITS = [30, 60, 120, null];
   const KINDS = ["off", "once", "until", "permanent"];
+  // Icon and colour per status, as the status sensor shows it
+  const STATUS = {
+    counting: ["mdi:account-check", "var(--success-color, #43a047)"],
+    time_up: ["mdi:account-clock", "var(--warning-color, #ffa600)"],
+    approval_expired: ["mdi:account-alert", "var(--warning-color, #ffa600)"],
+    not_approved: ["mdi:account-cancel", "var(--warning-color, #ffa600)"],
+    resuming: ["mdi:account-sync", "var(--info-color, #039be5)"],
+    away: ["mdi:account-outline", "var(--disabled-text-color, #9e9e9e)"],
+  };
 
   const esc = (value) =>
     String(value ?? "").replace(
@@ -121,50 +160,57 @@ if (!customElements.get("guest-access-panel")) {
       (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
     );
   const pad = (n) => String(n).padStart(2, "0");
-  // A Date as the value of a datetime-local input, in local time
-  const localInput = (iso) => {
-    if (!iso) return "";
+  // An ISO time as the value of a datetime selector, in local time
+  const localValue = (iso) => {
+    if (!iso) return undefined;
     const d = new Date(iso);
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
   };
+  const withSeconds = (time) => (time && time.length === 5 ? `${time}:00` : time);
+  const withoutSeconds = (time) => (time || "").slice(0, 5);
 
   const STYLE = `
-    :host { display: block; background: var(--primary-background-color); color: var(--primary-text-color);
-      min-height: 100vh; min-height: 100dvh; font-family: var(--ha-font-family-body, Roboto, sans-serif); }
-    header { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 12px;
-      background: var(--app-header-background-color, var(--primary-color)); color: var(--app-header-text-color, #fff);
-      font-size: 20px; }
-    main { max-width: 860px; margin: 0 auto; padding: 16px; box-sizing: border-box; }
-    .card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius, 12px);
-      border: 1px solid var(--divider-color); padding: 16px; margin-bottom: 16px; }
-    h2 { font-size: 18px; font-weight: 500; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
-    h2 .grow { flex: 1; }
-    .guest { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 0;
-      border-top: 1px solid var(--divider-color); }
-    .guest:first-of-type { border-top: none; }
-    .guest .info { flex: 1; min-width: 200px; }
-    .guest .name { font-weight: 500; }
-    .muted { color: var(--secondary-text-color); font-size: 14px; }
-    .state { font-size: 14px; }
-    .on { color: var(--success-color, #43a047); }
-    .warn { color: var(--warning-color, #ffa600); }
-    button { font: inherit; font-size: 14px; border-radius: 8px; padding: 6px 14px; cursor: pointer;
-      border: 1px solid var(--primary-color); background: transparent; color: var(--primary-color); }
-    button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-    button.danger { border-color: var(--error-color, #db4437); color: var(--error-color, #db4437); }
-    label { display: block; font-size: 14px; margin: 12px 0 4px; color: var(--secondary-text-color); }
-    label.inline { display: inline-flex; align-items: center; gap: 6px; margin: 4px 12px 4px 0;
+    :host { display: block; height: 100vh; height: 100dvh; background: var(--primary-background-color);
       color: var(--primary-text-color); }
-    input, select { font: inherit; font-size: 15px; padding: 8px; border-radius: 8px; box-sizing: border-box;
-      border: 1px solid var(--divider-color); background: var(--input-fill-color, var(--card-background-color));
-      color: var(--primary-text-color); max-width: 100%; }
-    input[type=checkbox] { padding: 0; }
-    .window { border: 1px solid var(--divider-color); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
-    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
-    .row input:not([type=checkbox]), .row select { flex: 1; min-width: 160px; }
-    .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
-    .error { color: var(--error-color, #db4437); margin-top: 12px; }
-    [hidden] { display: none !important; }
+    ha-top-app-bar-fixed { height: 100%; }
+    .content { max-width: 860px; margin: 0 auto; padding: 16px; box-sizing: border-box;
+      display: flex; flex-direction: column; gap: 16px; }
+    ha-card { overflow: hidden; }
+    .card-content { padding: 0 16px 16px; }
+    .card-content.top { padding-top: 16px; }
+    .card-content.list { padding: 0 0 8px; }
+    .card-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+      padding: 8px 16px; border-top: 1px solid var(--divider-color); }
+    .card-actions .spacer { flex: 1; }
+    .item { display: flex; align-items: center; gap: 16px; padding: 8px 8px 8px 16px; min-height: 72px;
+      box-sizing: border-box; cursor: pointer; }
+    .item:hover { background: var(--secondary-background-color); }
+    .item .icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; flex: none; }
+    .item .icon ha-icon { --mdc-icon-size: 24px; }
+    .item .text { flex: 1; min-width: 0; }
+    .item .headline { font-size: var(--ha-font-size-l, 16px); font-weight: var(--ha-font-weight-medium, 500);
+      line-height: 24px; }
+    .item .supporting { font-size: var(--ha-font-size-m, 14px); color: var(--secondary-text-color);
+      line-height: 20px; }
+    .item .chevron { color: var(--secondary-text-color); }
+    .row { display: flex; align-items: center; gap: 16px; padding: 12px 16px; }
+    .row .label { flex: none; width: 160px; color: var(--secondary-text-color); }
+    .row .value { flex: 1; min-width: 0; }
+    .empty { padding: 0 16px 8px; color: var(--secondary-text-color); }
+    .note { color: var(--secondary-text-color); font-size: var(--ha-font-size-m, 14px); margin: 0 0 8px; }
+    .entry { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0;
+      border-top: 1px solid var(--divider-color); }
+    .entry:first-of-type { border-top: none; }
+    .entry ha-form { flex: 1; min-width: 0; }
+    .entry ha-icon-button { margin-top: 4px; color: var(--secondary-text-color); }
+    ha-alert { display: block; }
+    ha-alert ha-button { margin-inline-start: 8px; }
+    @media (max-width: 600px) {
+      .content { padding: 8px; gap: 8px; }
+      .row { flex-direction: column; align-items: flex-start; gap: 2px; }
+      .row .label { width: auto; }
+    }
   `;
 
   class GuestAccessPanel extends HTMLElement {
@@ -174,6 +220,8 @@ if (!customElements.get("guest-access-panel")) {
       this._data = null;
       // What is being edited: null, {kind: "guest", ...} or {kind: "settings", ...}
       this._form = null;
+      // A pending confirmation: {action: "lock" | "delete", id, name}
+      this._confirm = null;
       this._error = "";
     }
 
@@ -181,11 +229,10 @@ if (!customElements.get("guest-access-panel")) {
       const first = !this._hass;
       this._hass = hass;
       if (first) {
-        this._renderFrame();
+        this._render();
         this._subscribe();
       }
-      const menu = this.shadowRoot.querySelector("ha-menu-button");
-      if (menu) menu.hass = hass;
+      for (const el of this.shadowRoot.querySelectorAll("ha-menu-button, ha-form")) el.hass = hass;
     }
 
     set narrow(narrow) {
@@ -220,13 +267,14 @@ if (!customElements.get("guest-access-panel")) {
       this._unsub = this._hass.connection.subscribeMessage(
         (data) => {
           this._data = data;
-          this._renderList();
+          // An open form keeps what is being typed; only the list follows the state
+          if (!this._form) this._render();
         },
         { type: "guest_access/subscribe" },
       );
       this._unsub.catch((err) => {
         this._error = err.message || String(err);
-        this._renderList();
+        this._render();
       });
     }
 
@@ -236,23 +284,12 @@ if (!customElements.get("guest-access-panel")) {
         return await this._hass.callWS(message);
       } catch (err) {
         this._error = err.message || String(err);
-        this._renderForm();
-        this._renderList();
+        this._render();
         throw err;
       }
     }
 
-    // Layout: the list follows the state, the form stays while it is edited
-
-    _renderFrame() {
-      this.shadowRoot.innerHTML = `
-        <style>${STYLE}</style>
-        <header><ha-menu-button></ha-menu-button><span>${esc(this._t("title"))}</span></header>
-        <main><div id="form"></div><div id="list"></div></main>`;
-      const menu = this.shadowRoot.querySelector("ha-menu-button");
-      menu.hass = this._hass;
-      menu.narrow = this._narrow;
-    }
+    // Names and texts
 
     _areaName(areaId) {
       return this._hass.areas?.[areaId]?.name || areaId;
@@ -263,11 +300,14 @@ if (!customElements.get("guest-access-panel")) {
     }
 
     _time(iso) {
-      const d = new Date(iso);
-      return d.toLocaleString(this._hass.locale?.language || undefined, {
+      return new Date(iso).toLocaleString(this._hass.locale?.language || undefined, {
         dateStyle: "short",
         timeStyle: "short",
       });
+    }
+
+    _rooms(ids) {
+      return ids.map((id) => this._areaName(id)).join(", ") || this._t("none");
     }
 
     _approvalText(guest) {
@@ -275,7 +315,8 @@ if (!customElements.get("guest-access-panel")) {
       let text = this._t(`kind_${a.kind}`);
       if (a.until) text += ` ${this._time(a.until)}`;
       const windows = a.windows.map(
-        (w) => `${w.weekdays.map((d) => this._t("weekdays")[d]).join(", ")} ${w.start}–${w.end}`,
+        (w) =>
+          `${w.weekdays.map((d) => this._t("weekdaysShort")[d]).join(", ")} ${withoutSeconds(w.start)}–${withoutSeconds(w.end)}`,
       );
       if (windows.length) text += ` · ${windows.join("; ")}`;
       if (a.kind !== "off" && !guest.state.approval_valid) text += ` (${this._t("expired")})`;
@@ -283,78 +324,178 @@ if (!customElements.get("guest-access-panel")) {
     }
 
     // The status comes from the integration, as on the guest's status sensor
-    _stateText(guest) {
+    _statusText(guest) {
       const s = guest.state;
-      const cls = {
-        counting: "on",
-        time_up: "warn",
-        approval_expired: "warn",
-        not_approved: "warn",
-      }[s.status] ?? "muted";
       let text = this._t(`status_${s.status}`);
-      if (s.counting && s.visit_ends) text += ` · ${this._t("visitEnds", { time: this._time(s.visit_ends) })}`;
-      return [text, cls];
+      if (s.counting && s.visit_ends) text += ` ${this._t("visitEnds", { time: this._time(s.visit_ends) })}`;
+      return text;
     }
 
-    _renderList() {
-      const list = this.shadowRoot.getElementById("list");
-      if (!list) return;
-      const data = this._data;
-      if (!data) {
-        list.innerHTML = this._error
-          ? `<div class="card error">${esc(this._t("error", { message: this._error }))}</div>`
-          : "";
+    // Layout: the top app bar with the list, or a subpage with the form
+
+    // The frame changes only between the list and a form, so a re-render of the
+    // content keeps the scroll position
+    _render() {
+      const root = this.shadowRoot;
+      const editing = !!this._form;
+      const mode = editing ? `${this._form.kind}:${this._form.id ?? ""}` : "list";
+      if (this._mode === mode && root.getElementById("content")) {
+        this._renderContent(root.getElementById("content"));
         return;
       }
-      const rooms = (ids) => ids.map((id) => esc(this._areaName(id))).join(", ") || this._t("none");
+      this._mode = mode;
+      const title = !editing
+        ? this._t("title")
+        : this._form.kind === "settings"
+          ? this._t("settings")
+          : this._form.id
+            ? this._form.originalName
+            : this._t("addGuest");
+      root.innerHTML = `
+        <style>${STYLE}</style>
+        <ha-top-app-bar-fixed>
+          ${
+            editing
+              ? `<ha-icon-button slot="navigationIcon" id="back" label="${esc(this._t("back"))}"><ha-icon icon="mdi:arrow-left"></ha-icon></ha-icon-button>`
+              : `<ha-menu-button slot="navigationIcon"></ha-menu-button>`
+          }
+          <div slot="title">${esc(title)}</div>
+          <div class="content" id="content"></div>
+        </ha-top-app-bar-fixed>`;
+      const menu = root.querySelector("ha-menu-button");
+      if (menu) {
+        menu.hass = this._hass;
+        menu.narrow = this._narrow;
+      }
+      root.querySelector("#back")?.addEventListener("click", () => this._close());
+      this._renderContent(root.getElementById("content"));
+    }
+
+    _renderContent(content) {
+      if (!this._form) this._renderList(content);
+      else if (this._form.kind === "settings") this._renderSettingsForm(content);
+      else this._renderGuestForm(content);
+    }
+
+    _errorAlert() {
+      return this._error
+        ? `<ha-alert alert-type="error">${esc(this._t("error", { message: this._error }))}</ha-alert>`
+        : "";
+    }
+
+    _confirmAlert(action) {
+      const c = this._confirm;
+      if (!c || c.action !== action) return "";
+      return `<ha-alert alert-type="warning">${esc(this._t(`${action}Confirm`, { name: c.name }))}
+        <ha-button slot="action" appearance="plain" id="confirm-cancel">${esc(this._t("cancel"))}</ha-button>
+        <ha-button slot="action" variant="danger" id="confirm-ok">${esc(this._t(action))}</ha-button>
+      </ha-alert>`;
+    }
+
+    _bindConfirm(host) {
+      host.querySelector("#confirm-cancel")?.addEventListener("click", () => {
+        this._confirm = null;
+        this._render();
+      });
+      host.querySelector("#confirm-ok")?.addEventListener("click", () => this._runConfirm());
+    }
+
+    // List
+
+    _renderList(content) {
+      const data = this._data;
+      if (!data) {
+        content.innerHTML = this._errorAlert();
+        return;
+      }
       const lock = data.lock.active
-        ? this._t("lockActive", { locked: rooms(data.lock.locked_rooms), free: rooms(data.lock.free_rooms) })
-        : this._t("lockOff");
+        ? `<ha-alert alert-type="info">${esc(
+            this._t("lockActive", { locked: this._rooms(data.lock.locked_rooms), free: this._rooms(data.lock.free_rooms) }),
+          )}</ha-alert>`
+        : "";
       const guests = data.guests
         .map((guest) => {
-          const [state, cls] = this._stateText(guest);
+          const [icon, color] = STATUS[guest.state.status] ?? STATUS.away;
           const visit =
             guest.visit_minutes === null ? this._t("unlimited") : this._t("minutes", { n: guest.visit_minutes });
-          const guestRooms = guest.all_rooms ? this._t("allRooms") : rooms(guest.rooms);
+          const guestRooms = guest.all_rooms ? this._t("allRooms") : this._rooms(guest.rooms);
           return `
-            <div class="guest">
-              <div class="info">
-                <div class="name">${esc(guest.name)}</div>
-                <div class="state ${cls}">${esc(state)}</div>
-                <div class="muted">${esc(this._approvalText(guest))}</div>
-                <div class="muted">${guestRooms} · ${esc(visit)}</div>
+            <div class="item" data-edit="${esc(guest.id)}" role="button" tabindex="0">
+              <div class="icon" style="color:${color};background:color-mix(in srgb, ${color} 15%, transparent)">
+                <ha-icon icon="${icon}"></ha-icon></div>
+              <div class="text">
+                <div class="headline">${esc(guest.name)} · ${esc(this._statusText(guest))}</div>
+                <div class="supporting">${esc(this._approvalText(guest))}</div>
+                <div class="supporting">${esc(guestRooms)} · ${esc(visit)}</div>
               </div>
-              <button data-edit="${esc(guest.id)}">${esc(this._t("edit"))}</button>
-              <button class="danger" data-lock="${esc(guest.id)}" ${guest.approval.kind === "off" ? "hidden" : ""}>${esc(this._t("lock"))}</button>
+              ${
+                guest.approval.kind === "off"
+                  ? ""
+                  : `<ha-icon-button data-lock="${esc(guest.id)}" label="${esc(this._t("lock"))}"><ha-icon icon="mdi:lock-outline"></ha-icon></ha-icon-button>`
+              }
+              <ha-icon class="chevron" icon="mdi:chevron-right"></ha-icon>
             </div>`;
         })
         .join("");
-      list.innerHTML = `
-        <div class="card">
-          <h2><span class="grow">${esc(this._t("guests"))}</span>
-            <button class="primary" id="add">${esc(this._t("addGuest"))}</button></h2>
-          ${guests || `<div class="muted">${esc(this._t("noGuests"))}</div>`}
-        </div>
-        <div class="card">
-          <h2><span class="grow">${esc(this._t("settings"))}</span>
-            <button id="settings">${esc(this._t("edit"))}</button></h2>
-          <div class="muted">${esc(this._t("residents"))}: ${
-            data.settings.residents.map((id) => esc(this._entityName(id))).join(", ") || this._t("none")
-          }</div>
-          <div class="muted">${esc(this._t("lockableRooms"))}: ${rooms(data.settings.rooms.map((r) => r.area_id))}</div>
-          <div class="muted">${lock}</div>
-        </div>`;
-      list.querySelector("#add").addEventListener("click", () => this._openGuest(null));
-      list.querySelector("#settings").addEventListener("click", () => this._openSettings());
-      for (const button of list.querySelectorAll("[data-edit]")) {
-        button.addEventListener("click", () => this._openGuest(button.dataset.edit));
+      const residents = data.settings.residents.map((id) => this._entityName(id)).join(", ") || this._t("none");
+      content.innerHTML = `
+        ${this._errorAlert()}
+        ${this._confirmAlert("lock")}
+        ${lock}
+        <ha-card header="${esc(this._t("guests"))}">
+          <div class="card-content list">
+            ${guests || `<div class="empty">${esc(this._t("noGuests"))}</div>`}
+          </div>
+          <div class="card-actions">
+            <ha-button id="add">${esc(this._t("addGuest"))}</ha-button>
+          </div>
+        </ha-card>
+        <ha-card header="${esc(this._t("settings"))}">
+          <div class="card-content list">
+            <div class="row"><div class="label">${esc(this._t("residents"))}</div>
+              <div class="value">${esc(residents)}</div></div>
+            <div class="row"><div class="label">${esc(this._t("lockableRooms"))}</div>
+              <div class="value">${esc(this._rooms(data.settings.rooms.map((r) => r.area_id)))}</div></div>
+            ${data.lock.active ? "" : `<div class="row"><div class="value supporting">${esc(this._t("lockOff"))}</div></div>`}
+          </div>
+          <div class="card-actions">
+            <ha-button appearance="plain" id="settings">${esc(this._t("edit"))}</ha-button>
+          </div>
+        </ha-card>`;
+      content.querySelector("#add").addEventListener("click", () => this._openGuest(null));
+      content.querySelector("#settings").addEventListener("click", () => this._openSettings());
+      for (const item of content.querySelectorAll("[data-edit]")) {
+        item.addEventListener("click", () => this._openGuest(item.dataset.edit));
+        item.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") this._openGuest(item.dataset.edit);
+        });
       }
-      for (const button of list.querySelectorAll("[data-lock]")) {
-        button.addEventListener("click", () => this._lock(button.dataset.lock));
+      for (const button of content.querySelectorAll("[data-lock]")) {
+        button.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const guest = data.guests.find((g) => g.id === button.dataset.lock);
+          this._confirm = { action: "lock", id: guest.id, name: guest.name };
+          this._render();
+        });
       }
+      this._bindConfirm(content);
     }
 
-    // Guest form
+    async _runConfirm() {
+      const c = this._confirm;
+      this._confirm = null;
+      try {
+        if (c.action === "lock") {
+          await this._call({ type: "guest_access/lock_guest", guest_id: c.id });
+        } else {
+          await this._call({ type: "guest_access/delete_guest", guest_id: c.id });
+          this._form = null;
+        }
+      } catch {
+        // Shown on the page
+      }
+      this._render();
+    }
 
     _openGuest(id) {
       const guest = this._data.guests.find((g) => g.id === id);
@@ -362,312 +503,365 @@ if (!customElements.get("guest-access-panel")) {
       this._form = {
         kind: "guest",
         id,
-        name: guest?.name ?? "",
-        trackers: guest ? [...guest.trackers] : [""],
-        approval: a?.kind ?? "once",
-        until: localInput(a?.until),
-        windows: (a?.windows ?? []).map((w) => ({ ...w, weekdays: [...w.weekdays] })),
-        grace: guest?.grace_minutes ?? 15,
-        rooms: guest ? [...guest.rooms] : [],
-        allRooms: guest?.all_rooms ?? false,
-        visit: guest ? guest.visit_minutes : 60,
+        originalName: guest?.name ?? "",
+        main: {
+          name: guest?.name ?? "",
+          trackers: guest ? [...guest.trackers] : [],
+        },
+        approval: {
+          kind: a?.kind ?? "once",
+          until: localValue(a?.until),
+          grace: guest?.grace_minutes ?? 15,
+        },
+        windows: (a?.windows ?? []).map((w) => ({
+          weekdays: w.weekdays.map(String),
+          start: withSeconds(w.start),
+          end: withSeconds(w.end),
+        })),
+        rooms: {
+          all_rooms: guest?.all_rooms ?? false,
+          rooms: guest ? [...guest.rooms] : [],
+          visit: guest ? String(guest.visit_minutes ?? "unlimited") : "60",
+        },
       };
       this._error = "";
-      this._renderForm();
+      this._confirm = null;
+      this._render();
     }
 
     _openSettings() {
       this._form = {
         kind: "settings",
-        residents: [...this._data.settings.residents],
+        main: { residents: [...this._data.settings.residents] },
         rooms: this._data.settings.rooms.map((room) => ({ ...room })),
       };
       this._error = "";
-      this._renderForm();
+      this._confirm = null;
+      this._render();
     }
 
     _close() {
       this._form = null;
       this._error = "";
-      this._renderForm();
+      this._confirm = null;
+      this._render();
     }
 
-    _renderForm() {
-      const host = this.shadowRoot.getElementById("form");
-      if (!host) return;
-      if (!this._form) {
-        host.innerHTML = "";
-        return;
+    // ha-form with HA's own selectors; a change re-renders only when the schema changes
+
+    _haForm(schema, data, onChange) {
+      const form = document.createElement("ha-form");
+      form.hass = this._hass;
+      form.schema = schema;
+      form.data = data;
+      form.computeLabel = (s) => this._t(`field_${s.name}`);
+      form.computeHelper = (s) => {
+        const help = this._t(`help_${s.name}`);
+        return help === `help_${s.name}` ? undefined : help;
+      };
+      form.addEventListener("value-changed", (e) => {
+        form.data = e.detail.value;
+        onChange(e.detail.value);
+      });
+      return form;
+    }
+
+    _card(header, ...children) {
+      const card = document.createElement("ha-card");
+      if (header) card.header = header;
+      const body = document.createElement("div");
+      body.className = header ? "card-content" : "card-content top";
+      body.append(...children);
+      card.append(body);
+      return card;
+    }
+
+    _note(text) {
+      const p = document.createElement("p");
+      p.className = "note";
+      p.textContent = text;
+      return p;
+    }
+
+    _iconButton(label, icon, onClick) {
+      const button = document.createElement("ha-icon-button");
+      button.label = label;
+      button.innerHTML = `<ha-icon icon="${icon}"></ha-icon>`;
+      button.addEventListener("click", onClick);
+      return button;
+    }
+
+    _button(label, onClick, appearance = "plain") {
+      const button = document.createElement("ha-button");
+      if (appearance) button.setAttribute("appearance", appearance);
+      button.textContent = label;
+      button.addEventListener("click", onClick);
+      return button;
+    }
+
+    _actions(save, withDelete) {
+      const card = document.createElement("ha-card");
+      const actions = document.createElement("div");
+      actions.className = "card-actions";
+      if (withDelete) {
+        const del = this._button(this._t("delete"), () => {
+          this._confirm = { action: "delete", id: this._form.id, name: this._form.originalName };
+          this._render();
+        });
+        del.setAttribute("variant", "danger");
+        actions.append(del);
       }
-      if (this._form.kind === "settings") this._renderSettingsForm(host);
-      else this._renderGuestForm(host);
+      const spacer = document.createElement("div");
+      spacer.className = "spacer";
+      actions.append(
+        spacer,
+        this._button(this._t("cancel"), () => this._close()),
+        this._button(this._t("save"), save, null),
+      );
+      card.append(actions);
+      return card;
     }
 
-    _entities(domain) {
-      return Object.keys(this._hass.states)
-        .filter((id) => id.startsWith(`${domain}.`))
-        .sort();
+    _prepend(content, html) {
+      if (!html) return;
+      const holder = document.createElement("div");
+      holder.innerHTML = html;
+      content.append(...holder.childNodes);
     }
 
-    _datalist(id, domain) {
-      return `<datalist id="${id}">${this._entities(domain)
-        .map((e) => `<option value="${esc(e)}">${esc(this._entityName(e))}</option>`)
-        .join("")}</datalist>`;
-    }
+    // Guest form
 
-    _renderGuestForm(host) {
+    _renderGuestForm(content) {
       const f = this._form;
       const configured = this._data.settings.rooms.map((r) => r.area_id);
-      const withEnd = f.approval === "once" || f.approval === "until";
-      const withWindow = f.approval === "until" || f.approval === "permanent";
-      host.innerHTML = `
-        <div class="card">
-          <h2>${esc(f.id ? f.name || this._t("edit") : this._t("addGuest"))}</h2>
-          <label>${esc(this._t("name"))}</label>
-          <input id="name" value="${esc(f.name)}" style="width:100%">
-          <label>${esc(this._t("trackers"))}</label>
-          ${f.trackers
-            .map(
-              (t, i) => `<div class="row">
-                <input list="trackers" data-tracker="${i}" value="${esc(t)}" placeholder="device_tracker.…">
-                <button data-remove-tracker="${i}">${esc(this._t("remove"))}</button></div>`,
-            )
-            .join("")}
-          ${this._datalist("trackers", "device_tracker")}
-          <button id="add-tracker">${esc(this._t("addTracker"))}</button>
-          <label>${esc(this._t("approval"))}</label>
-          <div class="row">
-            <select id="approval">${KINDS.map(
-              (k) => `<option value="${k}" ${k === f.approval ? "selected" : ""}>${esc(this._t(`kind_${k}`))}</option>`,
-            ).join("")}</select>
-            <input id="until" type="datetime-local" value="${esc(f.until)}" ${withEnd ? "" : "hidden"}>
-          </div>
-          <div ${withWindow ? "" : "hidden"}>
-            <label>${esc(this._t("windows"))}</label>
-            ${f.windows
-              .map(
-                (w, n) => `<div class="window">
-                  <div>${this._t("weekdays")
-                    .map(
-                      (d, i) => `<label class="inline"><input type="checkbox" data-window="${n}" data-day="${i}" ${w.weekdays.includes(i) ? "checked" : ""}>${esc(d)}</label>`,
-                    )
-                    .join("")}</div>
-                  <div class="row">${esc(this._t("from"))} <input type="time" data-window="${n}" data-field="start" value="${esc(w.start)}">
-                    ${esc(this._t("to"))} <input type="time" data-window="${n}" data-field="end" value="${esc(w.end)}">
-                    <button data-remove-window="${n}">${esc(this._t("remove"))}</button></div>
-                </div>`,
-              )
-              .join("")}
-            <button id="add-window">${esc(this._t("addWindow"))}</button>
-          </div>
-          <div ${f.approval === "off" ? "hidden" : ""}>
-            <label>${esc(this._t("grace"))}</label>
-            <input id="grace" type="number" min="1" max="240" value="${esc(f.grace)}">
-          </div>
-          <label>${esc(this._t("rooms"))}</label>
-          ${
-            configured.length
-              ? `<label class="inline"><input type="checkbox" id="all-rooms" ${f.allRooms ? "checked" : ""}>${esc(this._t("allRooms"))}</label>
-                 ${configured
-                   .map(
-                     (a) => `<label class="inline"><input type="checkbox" data-room="${esc(a)}"
-                       ${f.allRooms || f.rooms.includes(a) ? "checked" : ""} ${f.allRooms ? "disabled" : ""}>${esc(this._areaName(a))}</label>`,
-                   )
-                   .join("")}`
-              : `<div class="muted">${esc(this._t("noRooms"))}</div>`
-          }
-          <label>${esc(this._t("visit"))}</label>
-          <select id="visit">${VISITS.map(
-            (v) => `<option value="${v ?? ""}" ${v === f.visit ? "selected" : ""}>${esc(
-              v === null ? this._t("unlimited") : this._t("minutes", { n: v }),
-            )}</option>`,
-          ).join("")}</select>
-          ${this._error ? `<div class="error">${esc(this._t("error", { message: this._error }))}</div>` : ""}
-          <div class="actions">
-            ${f.id ? `<button class="danger" id="delete">${esc(this._t("delete"))}</button>` : ""}
-            <button id="cancel">${esc(this._t("cancel"))}</button>
-            <button class="primary" id="save">${esc(this._t("save"))}</button>
-          </div>
-        </div>`;
-      const $ = (sel) => host.querySelector(sel);
-      $("#name").addEventListener("input", (e) => (f.name = e.target.value));
-      for (const input of host.querySelectorAll("[data-tracker]")) {
-        input.addEventListener("input", (e) => (f.trackers[Number(input.dataset.tracker)] = e.target.value));
-      }
-      for (const button of host.querySelectorAll("[data-remove-tracker]")) {
-        button.addEventListener("click", () => {
-          f.trackers.splice(Number(button.dataset.removeTracker), 1);
-          this._renderForm();
+      content.innerHTML = "";
+      this._prepend(content, this._errorAlert() + this._confirmAlert("delete"));
+      this._bindConfirm(content);
+
+      content.append(
+        this._card(
+          "",
+          this._haForm(
+            [
+              { name: "name", required: true, selector: { text: {} } },
+              { name: "trackers", required: true, selector: { entity: { multiple: true, filter: { domain: "device_tracker" } } } },
+            ],
+            f.main,
+            (value) => (f.main = value),
+          ),
+        ),
+      );
+
+      const withEnd = f.approval.kind === "once" || f.approval.kind === "until";
+      const approvalSchema = [
+        {
+          name: "kind",
+          required: true,
+          selector: { select: { mode: "dropdown", options: KINDS.map((k) => ({ value: k, label: this._t(`kind_${k}`) })) } },
+        },
+      ];
+      if (withEnd) approvalSchema.push({ name: "until", required: true, selector: { datetime: {} } });
+      if (f.approval.kind !== "off") {
+        approvalSchema.push({
+          name: "grace",
+          required: true,
+          selector: { number: { min: 1, max: 240, mode: "box", unit_of_measurement: "min" } },
         });
       }
-      $("#add-tracker").addEventListener("click", () => {
-        f.trackers.push("");
-        this._renderForm();
-      });
-      $("#approval").addEventListener("change", (e) => {
-        f.approval = e.target.value;
-        this._renderForm();
-      });
-      $("#until").addEventListener("input", (e) => (f.until = e.target.value));
-      for (const box of host.querySelectorAll("[data-day]")) {
-        box.addEventListener("change", () => {
-          const w = f.windows[Number(box.dataset.window)];
-          const day = Number(box.dataset.day);
-          w.weekdays = box.checked ? [...w.weekdays, day].sort() : w.weekdays.filter((d) => d !== day);
+      content.append(
+        this._card(
+          this._t("approvalSection"),
+          this._haForm(approvalSchema, f.approval, (value) => {
+            const kindChanged = value.kind !== f.approval.kind;
+            f.approval = value;
+            if (kindChanged) this._render();
+          }),
+        ),
+      );
+
+      if (f.approval.kind === "until" || f.approval.kind === "permanent") {
+        const entries = f.windows.map((w, n) => {
+          const entry = document.createElement("div");
+          entry.className = "entry";
+          entry.append(
+            this._haForm(
+              [
+                {
+                  name: "weekdays",
+                  required: true,
+                  selector: {
+                    select: {
+                      multiple: true,
+                      mode: "dropdown",
+                      options: this._t("weekdays").map((d, i) => ({ value: String(i), label: d })),
+                    },
+                  },
+                },
+                {
+                  type: "grid",
+                  name: "",
+                  schema: [
+                    { name: "start", required: true, selector: { time: { no_second: true } } },
+                    { name: "end", required: true, selector: { time: { no_second: true } } },
+                  ],
+                },
+              ],
+              w,
+              (value) => (f.windows[n] = value),
+            ),
+            this._iconButton(this._t("removeWindow"), "mdi:delete-outline", () => {
+              f.windows.splice(n, 1);
+              this._render();
+            }),
+          );
+          return entry;
         });
-      }
-      for (const input of host.querySelectorAll("[data-field]")) {
-        input.addEventListener("input", () => (f.windows[Number(input.dataset.window)][input.dataset.field] = input.value));
-      }
-      for (const button of host.querySelectorAll("[data-remove-window]")) {
-        button.addEventListener("click", () => {
-          f.windows.splice(Number(button.dataset.removeWindow), 1);
-          this._renderForm();
+        const add = this._button(this._t("addWindow"), () => {
+          f.windows.push({ weekdays: ["0", "1", "2", "3", "4"], start: "08:00:00", end: "18:00:00" });
+          this._render();
         });
+        content.append(this._card(this._t("windows"), this._note(this._t("windowsHelp")), ...entries, add));
       }
-      $("#add-window").addEventListener("click", () => {
-        f.windows.push({ weekdays: [0, 1, 2, 3, 4], start: "08:00", end: "18:00" });
-        this._renderForm();
-      });
-      $("#grace").addEventListener("input", (e) => (f.grace = Number(e.target.value)));
-      $("#all-rooms")?.addEventListener("change", (e) => {
-        f.allRooms = e.target.checked;
-        this._renderForm();
-      });
-      for (const box of host.querySelectorAll("[data-room]")) {
-        box.addEventListener("change", () => {
-          const room = box.dataset.room;
-          f.rooms = box.checked ? [...f.rooms, room] : f.rooms.filter((r) => r !== room);
-        });
+
+      const roomsSchema = [];
+      if (configured.length) {
+        roomsSchema.push({ name: "all_rooms", selector: { boolean: {} } });
+        if (!f.rooms.all_rooms) {
+          roomsSchema.push({
+            name: "rooms",
+            selector: {
+              select: { multiple: true, mode: "list", options: configured.map((a) => ({ value: a, label: this._areaName(a) })) },
+            },
+          });
+        }
       }
-      $("#visit").addEventListener("change", (e) => (f.visit = e.target.value === "" ? null : Number(e.target.value)));
-      $("#cancel").addEventListener("click", () => this._close());
-      $("#save").addEventListener("click", () => this._saveGuest());
-      $("#delete")?.addEventListener("click", () => this._delete());
+      roomsSchema.push({
+        name: "visit",
+        required: true,
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: VISITS.map((v) => ({
+              value: String(v ?? "unlimited"),
+              label: v === null ? this._t("unlimited") : this._t("minutes", { n: v }),
+            })),
+          },
+        },
+      });
+      const roomChildren = configured.length ? [] : [this._note(this._t("noRooms"))];
+      content.append(
+        this._card(
+          this._t("roomsSection"),
+          ...roomChildren,
+          this._haForm(roomsSchema, f.rooms, (value) => {
+            const allChanged = value.all_rooms !== f.rooms.all_rooms;
+            f.rooms = value;
+            if (allChanged) this._render();
+          }),
+        ),
+      );
+
+      content.append(this._actions(() => this._saveGuest(), !!f.id));
     }
 
     async _saveGuest() {
       const f = this._form;
-      const withEnd = f.approval === "once" || f.approval === "until";
-      const withWindow = f.approval === "until" || f.approval === "permanent";
+      const kind = f.approval.kind;
+      const withEnd = kind === "once" || kind === "until";
+      const withWindow = kind === "until" || kind === "permanent";
+      const until = withEnd && f.approval.until ? new Date(f.approval.until.replace(" ", "T")) : null;
       const message = {
         type: "guest_access/save_guest",
-        name: f.name,
-        trackers: f.trackers.map((t) => t.trim()).filter(Boolean),
+        name: (f.main.name || "").trim(),
+        trackers: f.main.trackers || [],
         approval: {
-          kind: f.approval,
-          until: withEnd && f.until ? new Date(f.until).toISOString() : null,
-          windows: withWindow ? f.windows : [],
+          kind,
+          until: until && !isNaN(until) ? until.toISOString() : null,
+          windows: withWindow
+            ? f.windows.map((w) => ({
+                weekdays: (w.weekdays || []).map(Number).sort(),
+                start: withoutSeconds(w.start),
+                end: withoutSeconds(w.end),
+              }))
+            : [],
         },
-        rooms: f.allRooms ? [] : f.rooms,
-        all_rooms: f.allRooms,
-        visit_minutes: f.visit,
-        grace_minutes: f.grace,
+        rooms: f.rooms.all_rooms ? [] : f.rooms.rooms || [],
+        all_rooms: !!f.rooms.all_rooms,
+        visit_minutes: f.rooms.visit === "unlimited" ? null : Number(f.rooms.visit),
+        grace_minutes: Number(f.approval.grace) || 15,
       };
       if (f.id) message.guest_id = f.id;
       try {
         await this._call(message);
         this._close();
       } catch {
-        // Shown in the form
-      }
-    }
-
-    async _delete() {
-      const f = this._form;
-      if (!confirm(this._t("deleteConfirm", { name: f.name }))) return;
-      try {
-        await this._call({ type: "guest_access/delete_guest", guest_id: f.id });
-        this._close();
-      } catch {
-        // Shown in the form
-      }
-    }
-
-    async _lock(id) {
-      const guest = this._data.guests.find((g) => g.id === id);
-      if (!guest || !confirm(this._t("lockConfirm", { name: guest.name }))) return;
-      try {
-        await this._call({ type: "guest_access/lock_guest", guest_id: id });
-      } catch {
-        // Shown in the list
+        // Shown on the page
       }
     }
 
     // Settings form
 
-    _renderSettingsForm(host) {
+    _renderSettingsForm(content) {
       const f = this._form;
-      const areas = Object.values(this._hass.areas || {}).sort((a, b) => a.name.localeCompare(b.name));
-      host.innerHTML = `
-        <div class="card">
-          <h2>${esc(this._t("settings"))}</h2>
-          <label>${esc(this._t("residents"))}</label>
-          <div>${this._entities("person")
-            .map(
-              (p) => `<label class="inline"><input type="checkbox" data-resident="${esc(p)}"
-                ${f.residents.includes(p) ? "checked" : ""}>${esc(this._entityName(p))}</label>`,
-            )
-            .join("")}</div>
-          <label>${esc(this._t("lockableRooms"))}</label>
-          ${f.rooms
-            .map(
-              (room, i) => `<div class="row">
-                <select data-area="${i}" aria-label="${esc(this._t("area"))}">
-                  <option value=""></option>
-                  ${areas
-                    .map(
-                      (a) => `<option value="${esc(a.area_id)}" ${a.area_id === room.area_id ? "selected" : ""}>${esc(a.name)}</option>`,
-                    )
-                    .join("")}
-                </select>
-                <input list="doors" data-door="${i}" value="${esc(room.door)}" placeholder="${esc(this._t("door"))}">
-                <button data-remove-room="${i}">${esc(this._t("remove"))}</button></div>`,
-            )
-            .join("")}
-          ${this._datalist("doors", "binary_sensor")}
-          <button id="add-room">${esc(this._t("addRoom"))}</button>
-          ${this._error ? `<div class="error">${esc(this._t("error", { message: this._error }))}</div>` : ""}
-          <div class="actions">
-            <button id="cancel">${esc(this._t("cancel"))}</button>
-            <button class="primary" id="save">${esc(this._t("save"))}</button>
-          </div>
-        </div>`;
-      for (const box of host.querySelectorAll("[data-resident]")) {
-        box.addEventListener("change", () => {
-          const id = box.dataset.resident;
-          f.residents = box.checked ? [...f.residents, id] : f.residents.filter((r) => r !== id);
-        });
-      }
-      for (const select of host.querySelectorAll("[data-area]")) {
-        select.addEventListener("change", () => (f.rooms[Number(select.dataset.area)].area_id = select.value));
-      }
-      for (const input of host.querySelectorAll("[data-door]")) {
-        input.addEventListener("input", () => (f.rooms[Number(input.dataset.door)].door = input.value.trim()));
-      }
-      for (const button of host.querySelectorAll("[data-remove-room]")) {
-        button.addEventListener("click", () => {
-          f.rooms.splice(Number(button.dataset.removeRoom), 1);
-          this._renderForm();
-        });
-      }
-      host.querySelector("#add-room").addEventListener("click", () => {
+      content.innerHTML = "";
+      this._prepend(content, this._errorAlert());
+
+      content.append(
+        this._card(
+          "",
+          this._haForm(
+            [{ name: "residents", selector: { entity: { multiple: true, filter: { domain: "person" } } } }],
+            f.main,
+            (value) => (f.main = value),
+          ),
+        ),
+      );
+
+      const entries = f.rooms.map((room, i) => {
+        const entry = document.createElement("div");
+        entry.className = "entry";
+        entry.append(
+          this._haForm(
+            [
+              {
+                type: "grid",
+                name: "",
+                schema: [
+                  { name: "area", required: true, selector: { area: {} } },
+                  { name: "door", required: true, selector: { entity: { filter: { domain: "binary_sensor" } } } },
+                ],
+              },
+            ],
+            { area: room.area_id, door: room.door },
+            (value) => (f.rooms[i] = { area_id: value.area || "", door: value.door || "" }),
+          ),
+          this._iconButton(this._t("removeRoom"), "mdi:delete-outline", () => {
+            f.rooms.splice(i, 1);
+            this._render();
+          }),
+        );
+        return entry;
+      });
+      const add = this._button(this._t("addRoom"), () => {
         f.rooms.push({ area_id: "", door: "" });
-        this._renderForm();
+        this._render();
       });
-      host.querySelector("#cancel").addEventListener("click", () => this._close());
-      host.querySelector("#save").addEventListener("click", async () => {
-        try {
-          await this._call({
-            type: "guest_access/save_settings",
-            residents: f.residents,
-            rooms: f.rooms.filter((r) => r.area_id || r.door),
-          });
-          this._close();
-        } catch {
-          // Shown in the form
-        }
-      });
+      content.append(this._card(this._t("lockableRooms"), this._note(this._t("roomsHelp")), ...entries, add));
+
+      content.append(
+        this._actions(async () => {
+          try {
+            await this._call({
+              type: "guest_access/save_settings",
+              residents: f.main.residents || [],
+              rooms: f.rooms.filter((r) => r.area_id || r.door),
+            });
+            this._close();
+          } catch {
+            // Shown on the page
+          }
+        }, false),
+      );
     }
   }
 
