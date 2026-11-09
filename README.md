@@ -148,6 +148,7 @@ Each guest is a device with its entities.
 | Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | alarm automations read only this |
+| Summary | `sensor` "Guests home since" (timestamp: the earliest arrival of the guests who count; unknown while none counts; a restart or a return within the grace time does not move it) | dashboards showing since when guests are home |
 | Room lock | `event` "Room violation" with the type `opened`, carrying the area, the door and the guests who count | push, log and image series stay in automations |
 
 The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities. No template is needed for that.

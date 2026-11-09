@@ -72,6 +72,9 @@
       },
       "visit_ends": {
         "name": "Besuchsende"
+      },
+      "guests_home_since": {
+        "name": "Gäste zuhause seit"
       }
     }
   },

@@ -42,6 +42,9 @@
       },
       "visit_ends": {
         "default": "mdi:timer-sand"
+      },
+      "guests_home_since": {
+        "default": "mdi:account-clock"
       }
     }
   }

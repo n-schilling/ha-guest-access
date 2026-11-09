@@ -24,6 +24,7 @@ GUESTS_HOME = "binary_sensor.guest_access_guests_home"
 ONLY_GUESTS = "binary_sensor.guest_access_only_guests_home"
 VISIT_ENDS = "sensor.anna_visit_ends"
 STATUS = "sensor.anna_status"
+HOME_SINCE = "sensor.guest_access_guests_home_since"
 ACTIVITY = "event.anna_activity"
 VIOLATION = "event.guest_access_room_violation"
 
@@ -54,6 +55,7 @@ async def test_setup_and_unload(hass: HomeAssistant, entry: MockConfigEntry) -> 
     assert state(hass, COUNTS) == STATE_OFF
     assert state(hass, GUESTS_HOME) == STATE_OFF
     assert state(hass, ONLY_GUESTS) == STATE_OFF
+    assert state(hass, HOME_SINCE) == STATE_UNKNOWN
     assert state(hass, VISIT_ENDS) == STATE_UNKNOWN
     assert state(hass, STATUS) == "away"
     assert attr(hass, STATUS, "options") == [
@@ -100,6 +102,7 @@ async def test_visit(
     assert attr(hass, GUESTS_HOME, "free_rooms") == []
     assert state(hass, ONLY_GUESTS) == STATE_ON
     assert state(hass, VISIT_ENDS) != STATE_UNKNOWN
+    assert state(hass, HOME_SINCE) != STATE_UNKNOWN
     assert attr(hass, ACTIVITY, "event_type") == "arrived"
     assert state(hass, STATUS) == "counting"
 
@@ -120,6 +123,7 @@ async def test_visit(
     await hass.async_block_till_done()
     assert state(hass, COUNTS) == STATE_OFF
     assert state(hass, VISIT_ENDS) == STATE_UNKNOWN
+    assert state(hass, HOME_SINCE) == STATE_UNKNOWN
     assert attr(hass, ACTIVITY, "event_type") == "left"
 
 

@@ -72,6 +72,9 @@
       },
       "visit_ends": {
         "name": "Visit ends"
+      },
+      "guests_home_since": {
+        "name": "Guests home since"
       }
     }
   },

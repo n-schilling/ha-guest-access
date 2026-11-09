@@ -13,6 +13,7 @@ from custom_components.guest_access.logic import (
     evaluate,
     free_rooms,
     guest_status,
+    home_since,
     locked_rooms,
     next_wake,
     only_guests_home,
@@ -329,3 +330,18 @@ def test_no_return_when_locked_or_invalid() -> None:
     evaluate(data, seen(), T0 + timedelta(minutes=5))
     assert evaluate(data, seen("a"), T0 + timedelta(minutes=10)) == []
     assert not data.presence["a"].counting
+
+
+def test_home_since() -> None:
+    """The earliest arrival of the guests who count; a return within the grace time keeps it."""
+    data = make(guest("a"), guest("b"))
+    assert home_since(data) is None
+    evaluate(data, seen("a"), T0)
+    evaluate(data, seen("a", "b"), T0 + timedelta(minutes=5))
+    assert home_since(data) == T0
+    evaluate(data, seen("b"), T0 + timedelta(minutes=10))
+    assert home_since(data) == T0 + timedelta(minutes=5)
+    evaluate(data, seen("a", "b"), T0 + timedelta(minutes=12))
+    assert home_since(data) == T0
+    evaluate(data, seen(), T0 + timedelta(minutes=20))
+    assert home_since(data) is None

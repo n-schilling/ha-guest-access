@@ -169,6 +169,16 @@ def counting_guests(data: AccessData) -> list[Guest]:
     return [guest for guest in data.guests.values() if data.presence_of(guest.id).counting]
 
 
+def home_since(data: AccessData) -> datetime | None:
+    """The earliest arrival of the guests who count; a visit continued within the grace time keeps it."""
+    arrivals = [
+        arrived
+        for guest in counting_guests(data)
+        if (arrived := data.presence_of(guest.id).arrived) is not None
+    ]
+    return min(arrivals, default=None)
+
+
 def free_rooms(data: AccessData) -> frozenset[str]:
     """The lockable rooms the guests who count may enter together.
 

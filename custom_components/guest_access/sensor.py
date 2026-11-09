@@ -1,4 +1,4 @@
-"""A guest's status and when the visit ends."""
+"""A guest's status and when the visit ends; since when guests are home."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GuestAccessConfigEntry
 from .engine import GuestEngine
-from .entity import GuestEntity, add_guest_entities
-from .logic import GuestStatus
+from .entity import GuestEntity, HubEntity, add_guest_entities
+from .logic import GuestStatus, home_since
 
 PARALLEL_UPDATES = 0
 
@@ -22,7 +22,8 @@ async def async_setup_entry(
     entry: GuestAccessConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add the sensors of every guest."""
+    """Add the hub's sensor and the sensors of every guest."""
+    async_add_entities([GuestsHomeSinceSensor(entry.runtime_data)])
 
     def _create(engine: GuestEngine, guest_id: str) -> list[Entity]:
         return [GuestStatusSensor(engine, guest_id), VisitEndsSensor(engine, guest_id)]
@@ -60,3 +61,22 @@ class GuestStatusSensor(GuestEntity, SensorEntity):
     def native_value(self) -> str:
         """The status of the guest."""
         return self.engine.status(self.guest_id).value
+
+
+class GuestsHomeSinceSensor(HubEntity, SensorEntity):
+    """Since when guests count: the earliest arrival; unknown while no guest counts.
+
+    It comes from the stored visits, so a restart or a return within the grace time
+    does not move it.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, engine: GuestEngine) -> None:
+        """Initialize the sensor."""
+        super().__init__(engine, "guests_home_since")
+
+    @property
+    def native_value(self) -> datetime | None:
+        """The earliest arrival of the guests who count."""
+        return home_since(self.engine.data)
