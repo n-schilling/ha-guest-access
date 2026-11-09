@@ -523,7 +523,8 @@ async def _open(
 
 async def _list(page: Page) -> None:
     """The list is there and Home Assistant's loading screen has faded out."""
-    await page.locator(f"{PANEL} [data-edit]").first.wait_for(timeout=20000)
+    # The first load of the frontend takes a while on a slow CI machine
+    await page.locator(f"{PANEL} [data-edit]").first.wait_for(timeout=90000)
     await page.locator("#ha-launch-screen").wait_for(state="detached")
 
 
