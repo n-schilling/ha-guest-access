@@ -43,7 +43,7 @@ class GuestEvent(GuestEntity, EventEntity):
     async def async_added_to_hass(self) -> None:
         """Follow the events of this guest."""
         await super().async_added_to_hass()
-        self.async_on_remove(self.engine.async_add_event_listener(self._event))
+        self.async_on_remove(self.engine.async_add_event_listener(self._event, self.guest_id))
 
     @callback
     def _changed(self) -> None:

@@ -29,7 +29,7 @@
         }
       },
       "only_guests_home": {
-        "name": "Nur Gäste daheim"
+        "name": "Nur Gäste zuhause"
       }
     },
     "event": {

@@ -11,8 +11,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from homeassistant.components.frontend import DATA_PANELS
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
+from homeassistant.helpers.event import EventStateChangedData, async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from custom_components.guest_access.const import DOMAIN, PANEL_URL_PATH, STORAGE_KEY
 from custom_components.guest_access.engine import GuestEngine
@@ -392,3 +394,109 @@ async def test_entity_id_change_keeps_device_name(
     device = devices.async_get_device_by_identifier((DOMAIN, "anna"), entry.entry_id)
     assert device is not None
     assert device.name == "Anna B"
+
+
+async def test_reload_keeps_guest_home(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A reload never shows a guest who is home as gone."""
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert state(hass, GUESTS_HOME) == STATE_ON
+    last_event = state(hass, ACTIVITY)
+    seen: list[str] = []
+
+    @callback
+    def _record(event: Event[EventStateChangedData]) -> None:
+        if (new := event.data["new_state"]) is not None:
+            seen.append(new.state)
+
+    unsub = async_track_state_change_event(hass, [GUESTS_HOME, COUNTS], _record)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    unsub()
+    assert STATE_OFF not in seen
+    assert state(hass, GUESTS_HOME) == STATE_ON
+    # The continued visit raises nothing new; the entity only restores its last event
+    assert state(hass, ACTIVITY) == last_event
+
+
+async def test_events_wait_for_their_entity(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """An event raised before its guest has a listener reaches the first one, the last ten."""
+    engine = engine_of(entry)
+    for n in range(12):
+        engine._raise("ghost", "left", {"n": n})
+    got: list[int] = []
+    unsub = engine.async_add_event_listener(lambda _g, _t, data, _c: got.append(data["n"]), "ghost")
+    assert got == list(range(2, 12))
+    engine._raise("ghost", "left", {"n": 99})
+    assert got[-1] == 99
+    unsub()
+
+
+async def test_visit_time_change_while_away(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """A new time per visit also applies to a visit that goes on after the grace time."""
+    from dataclasses import replace
+
+    engine = engine_of(entry)
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    arrived = engine.data.presence["anna"].arrived
+    assert arrived is not None
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    engine.async_save_guest(replace(engine.data.guests["anna"], visit_minutes=120))
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=5))
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert engine.data.presence["anna"].visit_ends == arrived + timedelta(minutes=120)
+
+
+async def test_approval_change_no_second_expiry(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Changing an expired approval to another invalid one raises no new expiry; the change comes first."""
+    from dataclasses import replace
+
+    from custom_components.guest_access.model import Approval, ApprovalKind
+
+    engine = engine_of(entry)
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    types: list[str] = []
+    engine.async_add_event_listener(lambda _g, event_type, _d, _c: types.append(event_type), "anna")
+    past = dt_util.utcnow() - timedelta(hours=1)
+    engine.async_save_guest(
+        replace(engine.data.guests["anna"], approval=Approval(ApprovalKind.UNTIL, past))
+    )
+    await hass.async_block_till_done()
+    assert types == ["approval_changed", "approval_expired"]
+    engine.async_save_guest(
+        replace(
+            engine.data.guests["anna"],
+            approval=Approval(ApprovalKind.UNTIL, past - timedelta(hours=1)),
+        )
+    )
+    await hass.async_block_till_done()
+    assert types == ["approval_changed", "approval_expired", "approval_changed"]
+
+
+async def test_room_added_during_lock_with_open_door(
+    hass: HomeAssistant, entry: MockConfigEntry, bedroom: str
+) -> None:
+    """A room that becomes lockable during the lock is free while its door is open then."""
+    from custom_components.guest_access.model import Room, Settings
+
+    engine = engine_of(entry)
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert engine.data.lock.active
+    office = ar.async_get(hass).async_create("Office").id
+    hass.states.async_set("binary_sensor.office_door", "on")
+    engine.async_save_settings(
+        Settings((RESIDENT,), (Room(bedroom, DOOR), Room(office, "binary_sensor.office_door")))
+    )
+    await hass.async_block_till_done()
+    assert office in engine.data.lock.exempt
+    assert attr(hass, GUESTS_HOME, "locked_rooms") == ["Bedroom"]

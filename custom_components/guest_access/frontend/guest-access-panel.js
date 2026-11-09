@@ -258,7 +258,8 @@ if (!customElements.get("guest-access-panel")) {
         : "en";
       let text = TEXTS[lang][key] ?? TEXTS.en[key] ?? key;
       if (typeof text === "string") {
-        for (const [name, value] of Object.entries(values)) text = text.replace(`{${name}}`, value);
+        // A function as replacement keeps "$" in names as they are
+        for (const [name, value] of Object.entries(values)) text = text.replace(`{${name}}`, () => value);
       }
       return text;
     }
@@ -467,7 +468,10 @@ if (!customElements.get("guest-access-panel")) {
       for (const item of content.querySelectorAll("[data-edit]")) {
         item.addEventListener("click", () => this._openGuest(item.dataset.edit));
         item.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") this._openGuest(item.dataset.edit);
+          // Only the row itself; the lock button inside handles its own keys
+          if (e.target !== item || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
+          this._openGuest(item.dataset.edit);
         });
       }
       for (const button of content.querySelectorAll("[data-lock]")) {

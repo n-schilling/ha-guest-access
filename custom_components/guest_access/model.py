@@ -115,6 +115,9 @@ class Approval:
         """The next moment the approval may turn valid or invalid, or None."""
         if self.kind is ApprovalKind.OFF:
             return None
+        if self.until is not None and moment >= self.until:
+            # Past its end the approval stays invalid, whatever its windows say
+            return None
         candidates = []
         if self.until is not None and self.until > moment:
             candidates.append(self.until)

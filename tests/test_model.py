@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 
@@ -104,6 +104,10 @@ async def test_approval_valid(hass: HomeAssistant) -> None:
     assert windowed.valid(local(hass, "2026-11-09T09:00"))
     assert not windowed.valid(local(hass, "2026-11-09T19:00"))
     assert windowed.next_change(local(hass, "2026-11-09T09:00")) == local(hass, "2026-11-09T18:00")
+    # Past its end the windows no longer matter: no more wake-ups
+    ended = Approval(ApprovalKind.UNTIL, UNTIL, (Window(WEEKDAYS, time(8), time(18)),))
+    assert ended.next_change(UNTIL) is None
+    assert ended.next_change(UNTIL + timedelta(days=3)) is None
 
 
 def test_guest_invalid() -> None:

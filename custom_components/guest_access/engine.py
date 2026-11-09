@@ -59,6 +59,8 @@ _LOGGER = logging.getLogger(__name__)
 type EventListener = Callable[[str | None, str, dict[str, Any], Context | None], None]
 
 SAVE_DELAY = 1
+# Events kept for an event entity that is not there yet, per guest
+QUEUE_LIMIT = 10
 
 
 class GuestEngine:
@@ -71,7 +73,9 @@ class GuestEngine:
         self.data = AccessData()
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self._listeners: list[CALLBACK_TYPE] = []
-        self._event_listeners: list[EventListener] = []
+        # Per guest id, None for the room violation
+        self._event_listeners: dict[str | None, list[EventListener]] = {}
+        self._queued: dict[str | None, list[tuple[str, dict[str, Any], Context | None]]] = {}
         self._unsub_states: CALLBACK_TYPE | None = None
         self._unsub_wake: CALLBACK_TYPE | None = None
         self._unsub_other: list[CALLBACK_TYPE] = []
@@ -82,10 +86,16 @@ class GuestEngine:
     # Life cycle
 
     async def async_start(self) -> None:
-        """Load the stored state and carry visits over the restart."""
+        """Load the stored state, carry visits over the restart and evaluate once.
+
+        The evaluation comes before the entities are added, so they start with the
+        right state: on a reload a guest who is home never shows as gone. Events
+        raised now wait for their entity.
+        """
         if (stored := await self._store.async_load()) is not None:
             self.data = AccessData.from_dict(stored)
         prepare_restart(self.data, dt_util.utcnow())
+        self._evaluate()
 
     @callback
     def async_begin(self) -> None:
@@ -140,10 +150,22 @@ class GuestEngine:
         return lambda: self._listeners.remove(listener)
 
     @callback
-    def async_add_event_listener(self, listener: EventListener) -> CALLBACK_TYPE:
-        """Call the listener for every raised event; returns the function that removes it."""
-        self._event_listeners.append(listener)
-        return lambda: self._event_listeners.remove(listener)
+    def async_add_event_listener(
+        self, listener: EventListener, guest_id: str | None = None
+    ) -> CALLBACK_TYPE:
+        """Call the listener for the events of a guest, or of the room lock with None.
+
+        Events raised before the first listener of their guest was there, as for a
+        guest whose entities are still being added, reach it now.
+        """
+        self._event_listeners.setdefault(guest_id, []).append(listener)
+        for event_type, data, context in self._queued.pop(guest_id, []):
+            listener(guest_id, event_type, data, context)
+
+        def _remove() -> None:
+            self._event_listeners[guest_id].remove(listener)
+
+        return _remove
 
     def _notify(self) -> None:
         for listener in list(self._listeners):
@@ -157,7 +179,13 @@ class GuestEngine:
         data: dict[str, Any],
         context: Context | None = None,
     ) -> None:
-        for listener in list(self._event_listeners):
+        listeners = self._event_listeners.get(guest_id)
+        if not listeners:
+            queue = self._queued.setdefault(guest_id, [])
+            queue.append((event_type, data, context))
+            del queue[:-QUEUE_LIMIT]
+            return
+        for listener in list(listeners):
             listener(guest_id, event_type, data, context)
 
     # Observation
@@ -208,6 +236,10 @@ class GuestEngine:
             return
         self._check_door(event)
         self._evaluate()
+        if new is None or old is None:
+            # An entity appeared or went away: a repair may open or close. Other
+            # state changes cannot change what is missing.
+            self._check_issues()
 
     def _check_door(self, event: Event[EventStateChangedData]) -> None:
         """Raise a room violation when the door of a locked room opens."""
@@ -250,7 +282,6 @@ class GuestEngine:
         self._schedule(now)
         if self.data.as_dict() != before:
             self._save()
-        self._check_issues()
         self._notify()
         for item in raised:
             self._raise(item.guest_id, item.event_type, item.data)
@@ -343,31 +374,36 @@ class GuestEngine:
         old = self.data.guests.get(guest.id)
         self.data.guests[guest.id] = guest
         presence = self.data.presence_of(guest.id)
-        if old is not None and presence.counting:
-            if old.visit_minutes != guest.visit_minutes and presence.arrived is not None:
-                # A new time per visit counts from the arrival
-                presence.visit_ends = (
-                    None if guest.visit is None else presence.arrived + guest.visit
-                )
-                presence.time_up = False
-            if old.approval != guest.approval:
-                presence.approval_expired = False
+        if (
+            old is not None
+            and old.visit_minutes != guest.visit_minutes
+            and presence.arrived is not None
+        ):
+            # A new time per visit counts from the arrival, also for a visit that
+            # goes on after the grace time or a restart
+            presence.visit_ends = None if guest.visit is None else presence.arrived + guest.visit
+            presence.time_up = False
         if old is not None and old.approval != guest.approval:
-            # A new approval starts afresh, also the grace time of a once approval
+            # A new approval starts afresh, also the grace time of a once approval.
+            # An expiry already raised for this visit is not raised again; a valid
+            # approval clears it in the evaluation.
             presence.away_since = None
         if old is not None and old.name != guest.name:
             self._rename_device(guest)
-        self._watch()
-        self._evaluate()
-        # The evaluation saves only what it changes itself, not this change
-        self._save()
         if old is None or old.approval != guest.approval:
+            # First the change, then what follows from it (arrived, left); a new
+            # guest's event waits until its entity is there
             self._raise(
                 guest.id,
                 EVENT_APPROVAL_CHANGED,
                 {**guest.approval.as_dict(), "reason": "changed", "by": by},
                 context,
             )
+        self._watch()
+        self._evaluate()
+        # The evaluation saves only what it changes itself, not this change
+        self._save()
+        self._check_issues()
 
     @callback
     def async_lock_guest(
@@ -382,6 +418,7 @@ class GuestEngine:
         """Remove a guest with the device and its entities."""
         self.data.guests.pop(guest_id)
         self.data.presence.pop(guest_id, None)
+        self._queued.pop(guest_id, None)
         registry = dr.async_get(self.hass)
         if (
             device := registry.async_get_device_by_identifier(
@@ -392,12 +429,24 @@ class GuestEngine:
         self._watch()
         self._evaluate()
         self._save()
+        self._check_issues()
 
     @callback
     def async_save_settings(self, settings: Settings) -> None:
         """Change the residents and the lockable rooms."""
+        before = {room.area_id for room in self.data.settings.rooms}
         self.data.settings = settings
         configured = {room.area_id for room in settings.rooms}
+        lock = self.data.lock
+        if lock.active:
+            # A room that becomes lockable during the lock is treated like one at its
+            # start: free for this lock when its door is open now
+            opened = {
+                room.area_id
+                for room in settings.rooms
+                if room.area_id not in before and self._is(room.door, STATE_ON)
+            }
+            self.data.lock = replace(lock, exempt=(lock.exempt | opened) & configured)
         for guest in list(self.data.guests.values()):
             if not set(guest.rooms) <= configured:
                 # A room that is no longer lockable leaves the guests' rooms
@@ -406,6 +455,7 @@ class GuestEngine:
         self._watch()
         self._evaluate()
         self._save()
+        self._check_issues()
 
     def _rename_device(self, guest: Guest) -> None:
         registry = dr.async_get(self.hass)
