@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - The interface is described in the README (section Interface) and pinned by tests: entity and unique IDs, event types and data, attributes, WebSocket commands, store format.
 - Names for the data of the guests' events and of the room violation in English and German.
+- Quality scale up to Platinum, rule by rule in quality_scale.yaml and checked by the tests.
+- README sections Examples, Known limitations, Troubleshooting and Removal; a security policy and issue forms.
 
 ### Changed
 

@@ -49,7 +49,7 @@ flowchart LR
     automations --> security["Alarm system, room lock"]
 ```
 
-Guest Access reads trackers, residents and door contacts and decides; everything to the right of the entities is up to your automations, not part of the integration.
+Guest Access reads trackers, residents and door contacts and decides; everything to the right of the entities is up to your automations, not part of the integration. Nothing is polled: Guest Access follows the state changes of these entities and wakes at its own deadlines (visit end, end of an approval, a time window opening or closing, the grace time), so its entities change the moment something happens.
 
 ### Guests
 
@@ -229,6 +229,86 @@ A sidebar page for administrators only: the list of guests with their state, a f
 
 Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`; when that happens within the resume time, the visit goes on with its end and without a new `arrived`, otherwise the guest has left.
 
+## Examples
+
+Guests count as home wherever "someone home" matters, without a template: put "Guests home" next to the residents, for example in a group.
+
+```yaml
+group:
+  anyone_home:
+    name: Anyone home
+    entities:
+      - person.sam
+      - person.robin
+      - binary_sensor.guest_access_guests_home
+```
+
+A notification when a guest's time is up while the guest is still there:
+
+```yaml
+automation:
+  - alias: Guest time up
+    triggers:
+      - trigger: event.received
+        target:
+          entity_id: event.guest_anna_activity
+        options:
+          event_type: [time_up]
+    actions:
+      - action: notify.mobile_app_sams_phone
+        data:
+          message: "Anna's visit time is up."
+```
+
+Keep the TV off while only guests are home:
+
+```yaml
+automation:
+  - alias: TV off while only guests are home
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.guest_access_only_guests_home
+        to: "on"
+    actions:
+      - action: switch.turn_off
+        target:
+          entity_id: switch.tv_plug
+```
+
+A room violation, with the room and the guests who count:
+
+```yaml
+automation:
+  - alias: Guest opened a locked room
+    triggers:
+      - trigger: event.received
+        target:
+          entity_id: event.guest_access_room_violation
+        options:
+          event_type: [opened]
+    actions:
+      - action: notify.mobile_app_sams_phone
+        data:
+          message: >-
+            {{ trigger.to_state.attributes.guests | join(', ') }} opened
+            {{ trigger.to_state.attributes.area }}.
+```
+
+## Known limitations
+
+- A tracker with a valid approval is a key: wherever Guest Access counts guests as residents, for example in an alarm system, carrying the tracker is enough. A Bluetooth beacon can be imitated with its address. Keep approvals as narrow as possible (an end, time windows) and lock a lost tracker at once.
+- Guest Access knows trackers, not people: a guest who stays while the tracker leaves no longer counts, and neither does a guest whose tracker loses reception; a return within the grace time continues the visit.
+- After a restart, guests count again only once a tracker reports home.
+- Rooms are locked by their door contact only: a room without a door contact cannot be locked, and windows are not watched.
+- Only administrators see the page and change approvals; Home Assistant cannot limit entities or actions to administrators, so there is no entity or action for it.
+
+## Troubleshooting
+
+- **A guest does not count:** the status sensor says why: `not_approved` (approval off, ended or outside its time windows), `away` (no tracker home; `unknown` and `unavailable` never count), `resuming` (waiting for a tracker after a restart).
+- **A repair issue names a tracker, resident, door or area:** it was removed or renamed; choose the new one on the page.
+- **The page is missing:** it is shown to administrators only, after the integration is set up.
+- **Something else:** download the diagnostics (see Diagnostics) and attach them to an issue; they contain no names, entities or areas.
+
 ## Interface
 
 Automations, dashboards and scripts build on what this section lists. From 1.0.0 on it changes only with a new major version: a later minor version may add entities, attributes, event types, event data, status values or optional command parameters, but renames, removals and changed meanings wait for the next major version and are listed in the changelog. Before 1.0.0 it may still change between minor versions. `tests/test_contract.py` pins all of it.
@@ -297,6 +377,10 @@ For administrators only; the page uses them, and so can a script with an adminis
 4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
 Requires Home Assistant 2026.11 or later. Without the Marketplace, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart. There are no requirements outside Home Assistant.
+
+### Removal
+
+**Settings → Devices & services → Guest Access → ⋮ → Delete** removes the guests, their devices and entities, the visit log and the page. Then remove the integration in the Marketplace and restart.
 
 ## Development
 

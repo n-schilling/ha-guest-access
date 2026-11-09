@@ -1,0 +1,134 @@
+# Integration quality scale, checked against the rules of Home Assistant 2026.11.
+# hassfest only validates this file for core integrations; it documents the
+# state of this custom integration rule by rule, and tests/test_quality_scale.py
+# fails while a rule is missing or not done.
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: No service actions; approvals change on the page only, see README.
+  appropriate-polling:
+    status: exempt
+    comment: >-
+      Nothing is polled: Guest Access follows state changes of trackers,
+      residents and doors and wakes at its own deadlines.
+  brands:
+    status: done
+    comment: Brand images ship in brand/.
+  common-modules: done
+  config-flow:
+    status: done
+    comment: The flow has no fields; everything is set on the page.
+  config-flow-test-coverage: done
+  dependency-transparency:
+    status: exempt
+    comment: No requirements.
+  docs-actions:
+    status: exempt
+    comment: No service actions.
+  docs-conditions:
+    status: exempt
+    comment: No conditions of its own; automations use the state of its entities.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure:
+    status: exempt
+    comment: Nothing to connect to.
+  test-before-setup:
+    status: exempt
+    comment: Nothing to connect to; missing trackers, doors or areas become repair issues.
+  unique-config-entry:
+    status: done
+    comment: single_config_entry.
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: No service actions.
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: done
+    comment: Settings and guest profiles are described in the README.
+  docs-installation-parameters:
+    status: exempt
+    comment: The config flow asks for nothing.
+  entity-unavailable:
+    status: done
+    comment: A guest's entities are unavailable while the guest is gone.
+  integration-owner: done
+  log-when-unavailable:
+    status: exempt
+    comment: No device or service that could become unavailable.
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: No credentials.
+  test-coverage:
+    status: done
+    comment: CI fails below 95 %.
+
+  # Gold
+  devices:
+    status: done
+    comment: The Guest Access service device and one service device per guest.
+  diagnostics:
+    status: done
+    comment: Without names, entities, areas or zones; times as minutes from now.
+  discovery:
+    status: exempt
+    comment: A service integration, nothing to discover.
+  discovery-update-info:
+    status: exempt
+    comment: Nothing to discover.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices:
+    status: done
+    comment: Any device_tracker entity of any integration.
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-triggers:
+    status: exempt
+    comment: No triggers of its own; automations use its event entities (README, Examples).
+  docs-use-cases: done
+  dynamic-devices:
+    status: done
+    comment: A guest added on the page gets its device and entities without a reload.
+  entity-category:
+    status: exempt
+    comment: Every entity is a primary entity for automations and dashboards.
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: done
+    comment: The hours this month, because every user can read an entity.
+  entity-translations: done
+  exception-translations:
+    status: exempt
+    comment: >-
+      No exception reaches a user outside the page; the page shows the
+      messages of its own commands.
+  icon-translations: done
+  reconfiguration-flow:
+    status: exempt
+    comment: The entry has no settings of its own; they are on the page.
+  repair-issues: done
+  stale-devices:
+    status: done
+    comment: Deleting a guest on the page removes the device.
+
+  # Platinum
+  async-dependency:
+    status: exempt
+    comment: No dependency.
+  inject-websession:
+    status: exempt
+    comment: No HTTP client.
+  strict-typing:
+    status: done
+    comment: mypy --strict runs in CI (mypy.ini).

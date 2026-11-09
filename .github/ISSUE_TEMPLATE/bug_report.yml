@@ -1,0 +1,33 @@
+name: Bug report
+description: Something does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead. Please leave out names and places of real people.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+      description: At the bottom of the Guest Access page.
+      placeholder: e.g. 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: From Settings → About.
+      placeholder: e.g. 2026.11.1
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics or log
+      description: Download the diagnostics from the integration's page; they hold no names, entities or areas. Copied log lines can contain names of guests and entities, please check them before posting.
+      render: text
