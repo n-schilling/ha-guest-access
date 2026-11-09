@@ -56,12 +56,20 @@ class GuestEntity(GuestAccessEntity):
         """Initialize the entity."""
         super().__init__(engine)
         self.guest_id = guest_id
-        guest = engine.data.guests[guest_id]
         self._attr_translation_key = key
         self._attr_unique_id = f"{guest_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, guest_id)},
-            name=guest.name,
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """The guest's device, with the name the guest has now.
+
+        Home Assistant applies this again whenever the entity is added, also after
+        an entity ID change; a name kept from creation would undo a later rename.
+        """
+        guest = self.engine.guest(self.guest_id)
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.guest_id)},
+            name=self.guest_id if guest is None else guest.name,
             entry_type=DeviceEntryType.SERVICE,
         )
 

@@ -371,3 +371,20 @@ async def test_admin_changes_are_saved(
     engine.async_delete_guest("ben")
     await hass.async_block_till_done()
     assert "ben" not in saved()["guests"]
+
+
+async def test_entity_id_change_keeps_device_name(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Changing an entity ID re-adds the entity; the device keeps the guest's current name."""
+    from dataclasses import replace
+
+    engine = engine_of(entry)
+    devices = dr.async_get(hass)
+    engine.async_save_guest(replace(engine.data.guests["anna"], name="Anna B"))
+    await hass.async_block_till_done()
+    er.async_get(hass).async_update_entity(COUNTS, new_entity_id="binary_sensor.guest_anna_counts")
+    await hass.async_block_till_done()
+    device = devices.async_get_device_by_identifier((DOMAIN, "anna"), entry.entry_id)
+    assert device is not None
+    assert device.name == "Anna B"
