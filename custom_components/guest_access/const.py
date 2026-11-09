@@ -20,6 +20,12 @@ DEFAULT_VISIT_MINUTES: Final = 60
 # After a restart a guest who counted before keeps the visit when a tracker
 # reports home within this time; otherwise the guest has left
 RESUME_WINDOW: Final = timedelta(minutes=10)
+# Visit log: quarter-hour grid, single visits 90 days, totals 13 months
+LOG_GRID: Final = timedelta(minutes=15)
+LOG_KEEP_VISITS: Final = timedelta(days=90)
+LOG_KEEP_MONTHS: Final = 13
+# Written by scripts/deploy.sh: the commit the deployed files come from
+BUILD_FILE: Final = "BUILD"
 
 # Event types of a guest's event entity
 EVENT_ARRIVED: Final = "arrived"
@@ -48,6 +54,7 @@ PANEL_ICON: Final = "mdi:account-key"
 WS_SUBSCRIBE: Final = f"{DOMAIN}/subscribe"
 WS_SAVE_GUEST: Final = f"{DOMAIN}/save_guest"
 WS_DELETE_GUEST: Final = f"{DOMAIN}/delete_guest"
+WS_DELETE_VISITS: Final = f"{DOMAIN}/delete_visits"
 WS_LOCK_GUEST: Final = f"{DOMAIN}/lock_guest"
 WS_SAVE_SETTINGS: Final = f"{DOMAIN}/save_settings"
 # Sent after every change, for the page

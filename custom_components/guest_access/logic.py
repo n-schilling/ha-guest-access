@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from .const import (
     EVENT_APPROVAL_CHANGED,
@@ -18,9 +20,12 @@ from .const import (
     EVENT_ARRIVED,
     EVENT_LEFT,
     EVENT_TIME_UP,
+    LOG_GRID,
+    LOG_KEEP_MONTHS,
+    LOG_KEEP_VISITS,
     RESUME_WINDOW,
 )
-from .model import AccessData, Approval, ApprovalKind, Guest, Lock, Presence
+from .model import AccessData, Approval, ApprovalKind, Guest, Lock, MonthTotal, Presence, Visit
 
 
 class GuestStatus(StrEnum):
@@ -75,8 +80,64 @@ def prepare_restart(data: AccessData, now: datetime) -> None:
             presence.resume_until = now + RESUME_WINDOW
 
 
-def _arrive(guest: Guest, presence: Presence, now: datetime) -> Raised:
+def _grid(moment: datetime) -> datetime:
+    """The nearest quarter hour."""
+    step = LOG_GRID.total_seconds()
+    return datetime.fromtimestamp(round(moment.timestamp() / step) * step, UTC)
+
+
+def month_key(moment: datetime) -> str:
+    """The local month of a moment, as the visit log keys it."""
+    return dt_util.as_local(moment).strftime("%Y-%m")
+
+
+def _finish(data: AccessData, guest: Guest, presence: Presence, end: datetime) -> None:
+    """End the visit; log it, rounded, when the guest keeps a visit log."""
+    if guest.log_visits and presence.arrived is not None:
+        start = _grid(presence.arrived)
+        # A visit takes at least one quarter hour
+        minutes = max(round((end - presence.arrived) / LOG_GRID), 1) * int(
+            LOG_GRID.total_seconds() // 60
+        )
+        data.visits.append(Visit(guest.id, start, minutes))
+        totals = data.months.setdefault(guest.id, {})
+        month = month_key(start)
+        total = totals.get(month, MonthTotal())
+        totals[month] = MonthTotal(total.visits + 1, total.minutes + minutes)
     presence.end_visit()
+
+
+def prune_log(data: AccessData, now: datetime) -> None:
+    """Forget single visits after 90 days and totals after 13 months."""
+    data.visits = [visit for visit in data.visits if now - visit.start < LOG_KEEP_VISITS]
+    local = dt_util.as_local(now)
+    oldest = local.year * 12 + local.month - 1 - (LOG_KEEP_MONTHS - 1)
+    oldest_key = f"{oldest // 12:04d}-{oldest % 12 + 1:02d}"
+    for guest_id in list(data.months):
+        kept = {
+            month: total for month, total in data.months[guest_id].items() if month >= oldest_key
+        }
+        if kept:
+            data.months[guest_id] = kept
+        else:
+            del data.months[guest_id]
+
+
+def forget_log(data: AccessData, guest_id: str) -> None:
+    """Delete the visit log of a guest."""
+    data.visits = [visit for visit in data.visits if visit.guest_id != guest_id]
+    data.months.pop(guest_id, None)
+
+
+def month_minutes(data: AccessData, guest_id: str, now: datetime) -> int:
+    """The minutes of the guest's finished visits in the current month."""
+    return data.months.get(guest_id, {}).get(month_key(now), MonthTotal()).minutes
+
+
+def _arrive(data: AccessData, guest: Guest, presence: Presence, now: datetime) -> Raised:
+    if presence.arrived is not None:
+        # A visit whose grace time ran out unnoticed ends where the guest left
+        _finish(data, guest, presence, presence.away_since or now)
     presence.counting = True
     presence.arrived = now
     presence.visit_ends = None if guest.visit is None else now + guest.visit
@@ -113,7 +174,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
     if presence.counting:
         if locked:
             # Locked by an administrator: no longer counts, wherever the guest is
-            presence.end_visit()
+            _finish(data, guest, presence, now)
             presence.away_since = None
             return []
         if not home:
@@ -121,7 +182,10 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         return _check_counting(guest, presence, now)
     if locked and (presence.resume_until is not None or presence.away_since is not None):
         # Locked while away or waiting to resume: the visit is over, the rooms lock
-        presence.end_visit()
+        left = presence.away_since
+        if left is None and presence.resume_until is not None:
+            left = presence.resume_until - RESUME_WINDOW
+        _finish(data, guest, presence, left or now)
         presence.away_since = None
     resuming = presence.resume_until is not None and now < presence.resume_until
     if home and resuming:
@@ -140,16 +204,17 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
             presence.counting = True
             presence.away_since = None
             return _check_counting(guest, presence, now)
+        arrived = _arrive(data, guest, presence, now)
         presence.away_since = None
-        return [_arrive(guest, presence, now), *_check_counting(guest, presence, now)]
+        return [arrived, *_check_counting(guest, presence, now)]
     raised = []
     if presence.resume_until is not None and not resuming:
         # Not back after a restart: the guest left in the meantime, at the
         # latest when Home Assistant started; the grace time counts from there
         raised.append(_leave(guest, presence, presence.resume_until - RESUME_WINDOW))
     if presence.away_since is not None and now >= presence.away_since + guest.grace:
-        # Away longer than the grace time: the visit is over
-        presence.end_visit()
+        # Away longer than the grace time: the visit is over, it ended on leaving
+        _finish(data, guest, presence, presence.away_since)
         presence.away_since = None
         if guest.approval.kind is ApprovalKind.ONCE:
             # One visit, and it is over
@@ -222,6 +287,7 @@ def evaluate(data: AccessData, observed: Observed, now: datetime) -> list[Raised
     for guest in list(data.guests.values()):
         raised.extend(_evaluate_guest(data, guest, observed.home.get(guest.id, False), now))
     _update_lock(data, observed)
+    prune_log(data, now)
     return raised
 
 

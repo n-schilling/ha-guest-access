@@ -4,3 +4,4 @@ __pycache__/
 .ruff_cache/
 .venv/
 .coverage
+custom_components/guest_access/BUILD

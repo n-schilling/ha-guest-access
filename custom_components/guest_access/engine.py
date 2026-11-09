@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 import logging
+from pathlib import Path
 from typing import Any
 import uuid
 
@@ -27,9 +28,11 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
+from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BUILD_FILE,
     DOMAIN,
     EVENT_APPROVAL_CHANGED,
     EVENT_OPENED,
@@ -43,9 +46,11 @@ from .logic import (
     Observed,
     counting_guests,
     evaluate,
+    forget_log,
     free_rooms,
     guest_status,
     locked_rooms,
+    month_key,
     next_wake,
     only_guests_home,
     prepare_restart,
@@ -82,6 +87,8 @@ class GuestEngine:
         self._issues_active = False
         # Door contact: its last real state, on or off
         self._doors: dict[str, str] = {}
+        # Shown on the page: the version and the commit it was deployed from
+        self.about: dict[str, str | None] = {"version": None, "commit": None}
 
     # Life cycle
 
@@ -94,6 +101,9 @@ class GuestEngine:
         """
         if (stored := await self._store.async_load()) is not None:
             self.data = AccessData.from_dict(stored)
+        integration = await async_get_integration(self.hass, DOMAIN)
+        commit = await self.hass.async_add_executor_job(_read_commit)
+        self.about = {"version": str(integration.version), "commit": commit}
         prepare_restart(self.data, dt_util.utcnow())
         self._evaluate()
 
@@ -290,8 +300,11 @@ class GuestEngine:
         if self._unsub_wake is not None:
             self._unsub_wake()
             self._unsub_wake = None
+        # The month's hours start again at the first of the month
+        wakes = [_next_month(now)]
         if (wake := next_wake(self.data, now)) is not None:
-            self._unsub_wake = async_track_point_in_utc_time(self.hass, self._wake, wake)
+            wakes.append(wake)
+        self._unsub_wake = async_track_point_in_utc_time(self.hass, self._wake, min(wakes))
 
     @callback
     def _wake(self, now: datetime) -> None:
@@ -338,6 +351,11 @@ class GuestEngine:
         guests = []
         for guest in self.data.guests.values():
             presence = self.data.presence_of(guest.id)
+            visits = sorted(
+                (visit for visit in self.data.visits if visit.guest_id == guest.id),
+                key=lambda visit: visit.start,
+                reverse=True,
+            )
             guests.append(
                 {
                     **guest.as_dict(),
@@ -347,9 +365,21 @@ class GuestEngine:
                         "approval_valid": guest.approval.valid(now),
                         "status": guest_status(presence, observed.home.get(guest.id, False)).value,
                     },
+                    "log": {
+                        "visits": [
+                            {"start": visit.start.isoformat(), "minutes": visit.minutes}
+                            for visit in visits
+                        ],
+                        "months": {
+                            month: total.as_dict()
+                            for month, total in sorted(self.data.months.get(guest.id, {}).items())
+                        },
+                        "this_month": month_key(now),
+                    },
                 }
             )
         return {
+            "about": self.about,
             "settings": self.data.settings.as_dict(),
             "guests": sorted(guests, key=lambda guest: str(guest["name"]).casefold()),
             "lock": {
@@ -390,6 +420,9 @@ class GuestEngine:
             presence.away_since = None
         if old is not None and old.name != guest.name:
             self._rename_device(guest)
+        if old is not None and old.log_visits and not guest.log_visits:
+            # No log means none at all: the one kept so far goes
+            forget_log(self.data, guest.id)
         if old is None or old.approval != guest.approval:
             # First the change, then what follows from it (arrived, left); a new
             # guest's event waits until its entity is there
@@ -419,6 +452,7 @@ class GuestEngine:
         self.data.guests.pop(guest_id)
         self.data.presence.pop(guest_id, None)
         self._queued.pop(guest_id, None)
+        forget_log(self.data, guest_id)
         registry = dr.async_get(self.hass)
         if (
             device := registry.async_get_device_by_identifier(
@@ -457,6 +491,13 @@ class GuestEngine:
         self._save()
         self._check_issues()
 
+    @callback
+    def async_delete_visits(self, guest_id: str) -> None:
+        """Delete a guest's visit log."""
+        forget_log(self.data, guest_id)
+        self._save()
+        self._notify()
+
     def _rename_device(self, guest: Guest) -> None:
         registry = dr.async_get(self.hass)
         if (
@@ -465,3 +506,20 @@ class GuestEngine:
             )
         ) is not None:
             registry.async_update_device(device.id, name=guest.name)
+
+
+def _next_month(now: datetime) -> datetime:
+    """The start of the next local month, in UTC."""
+    local = dt_util.as_local(now)
+    year, month = (local.year + 1, 1) if local.month == 12 else (local.year, local.month + 1)
+    return dt_util.as_utc(
+        local.replace(year=year, month=month, day=1, hour=0, minute=0, second=0, microsecond=0)
+    )
+
+
+def _read_commit() -> str | None:
+    """The commit the integration was deployed from, written by the deploy script."""
+    try:
+        return (Path(__file__).parent / BUILD_FILE).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None

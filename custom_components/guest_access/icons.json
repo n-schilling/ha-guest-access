@@ -45,6 +45,9 @@
       },
       "guests_home_since": {
         "default": "mdi:account-clock"
+      },
+      "month_hours": {
+        "default": "mdi:calendar-clock"
       }
     }
   }

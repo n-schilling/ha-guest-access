@@ -145,6 +145,7 @@ Each guest is a device with its entities.
 | Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
 | Per guest | `sensor` "<guest> status" (enum: `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`) | dashboards show it as it is, no template |
 | Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
+| Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log) | the hours on a dashboard |
 | Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | alarm automations read only this |
@@ -154,6 +155,10 @@ Each guest is a device with its entities.
 The integration only provides state and triggers; it notifies nobody, switches nothing and never arms or disarms. Every reaction, inside the alarm system or elsewhere (keeping the TV off while only guests are home, opening blinds or turning on lights on arrival), is an automation that uses state triggers on these entities. No template is needed for that.
 
 No entity changes an approval: Home Assistant cannot limit an entity to administrators, so approvals are changed only on the page.
+
+### Visit log
+
+For guests whose hours matter (a cleaner, a babysitter) Guest Access keeps a visit log, not a surveillance record. It is on per guest by default and can be switched off; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a quarter-hour grid; a return within the grace time is the same visit. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days, monthly totals (visits, hours) for 13 months. The log shows only on the page, with a CSV export and a delete button; the sensor "<guest> hours this month" carries the hours of the finished visits this month.
 
 ### Repairs
 
@@ -176,10 +181,10 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, and hassfest in Docker.
 
-Deploy to a Home Assistant OS host:
+Deploy to a Home Assistant OS host (copies the files, writes the deployed commit for the page and restarts Home Assistant):
 
 ```bash
-tar -C custom_components --exclude __pycache__ -cf - guest_access | ssh <host> 'tar -C /mnt/data/supervisor/homeassistant/custom_components -xf -'
+scripts/deploy.sh <ssh-host>
 ```
 
-then delete the `._*` files macOS adds and restart Home Assistant.
+The page shows the version and that commit at the bottom; `-dirty` marks files that differ from it.

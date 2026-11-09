@@ -5,14 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import GuestAccessConfigEntry
 from .engine import GuestEngine
 from .entity import GuestEntity, HubEntity, add_guest_entities
-from .logic import GuestStatus, home_since
+from .logic import GuestStatus, home_since, month_minutes
 
 PARALLEL_UPDATES = 0
 
@@ -26,7 +28,11 @@ async def async_setup_entry(
     async_add_entities([GuestsHomeSinceSensor(entry.runtime_data)])
 
     def _create(engine: GuestEngine, guest_id: str) -> list[Entity]:
-        return [GuestStatusSensor(engine, guest_id), VisitEndsSensor(engine, guest_id)]
+        return [
+            GuestStatusSensor(engine, guest_id),
+            VisitEndsSensor(engine, guest_id),
+            MonthHoursSensor(engine, guest_id),
+        ]
 
     add_guest_entities(entry, async_add_entities, _create)
 
@@ -80,3 +86,26 @@ class GuestsHomeSinceSensor(HubEntity, SensorEntity):
     def native_value(self) -> datetime | None:
         """The earliest arrival of the guests who count."""
         return home_since(self.engine.data)
+
+
+class MonthHoursSensor(GuestEntity, SensorEntity):
+    """The hours of the guest's finished visits this month, from the visit log.
+
+    Unknown while the guest keeps no visit log.
+    """
+
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.HOURS
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, engine: GuestEngine, guest_id: str) -> None:
+        """Initialize the sensor."""
+        super().__init__(engine, guest_id, "month_hours")
+
+    @property
+    def native_value(self) -> float | None:
+        """The hours this month."""
+        guest = self.engine.guest(self.guest_id)
+        if guest is None or not guest.log_visits:
+            return None
+        return month_minutes(self.engine.data, self.guest_id, dt_util.utcnow()) / 60

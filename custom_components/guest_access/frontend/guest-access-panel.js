@@ -74,6 +74,20 @@ if (!customElements.get("guest-access-panel")) {
       error: "Error: {message}",
       weekdays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
       weekdaysShort: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+      field_log_visits: "Keep a visit log",
+      help_log_visits: "Date, start and length of each visit, on a quarter-hour grid; single visits for 90 days, monthly totals for 13 months. Switched off, the log so far is deleted.",
+      logSection: "Visit log",
+      logOffNote: "Saving deletes the visit log kept so far.",
+      logRunning: "Visit running since {time}",
+      logMonth: "This month: {visits} visits, {hours} h",
+      logLastMonth: "Last month: {visits} visits, {hours} h",
+      logNone: "No finished visits yet.",
+      logExport: "Export as CSV",
+      logDelete: "Delete log",
+      logDeleteConfirm: "Delete the visit log of {name}?",
+      csvHeader: "Date;Start;End;Hours",
+      about: "Guest Access {version} · commit {commit}",
+      unknownCommit: "unknown",
     },
     de: {
       title: "Guest Access",
@@ -140,6 +154,20 @@ if (!customElements.get("guest-access-panel")) {
       error: "Fehler: {message}",
       weekdays: ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
       weekdaysShort: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+      field_log_visits: "Besuchsprotokoll führen",
+      help_log_visits: "Datum, Beginn und Dauer je Besuch, auf 15 Minuten gerundet; einzelne Besuche 90 Tage, Monatssummen 13 Monate. Ausgeschaltet wird das bisherige Protokoll gelöscht.",
+      logSection: "Besuchsprotokoll",
+      logOffNote: "Beim Speichern wird das bisherige Besuchsprotokoll gelöscht.",
+      logRunning: "Besuch läuft seit {time}",
+      logMonth: "Dieser Monat: {visits} Besuche, {hours} h",
+      logLastMonth: "Letzter Monat: {visits} Besuche, {hours} h",
+      logNone: "Noch keine abgeschlossenen Besuche.",
+      logExport: "Als CSV exportieren",
+      logDelete: "Protokoll löschen",
+      logDeleteConfirm: "Besuchsprotokoll von {name} löschen?",
+      csvHeader: "Datum;Beginn;Ende;Stunden",
+      about: "Guest Access {version} · Commit {commit}",
+      unknownCommit: "unbekannt",
     },
   };
   const VISITS = [30, 60, 120, null];
@@ -172,7 +200,17 @@ if (!customElements.get("guest-access-panel")) {
   const STYLE = `
     :host { display: block; height: 100vh; height: 100dvh; background: var(--primary-background-color);
       color: var(--primary-text-color); }
-    ha-top-app-bar-fixed { height: 100%; }
+    /* Like the settings and other panels: the header in the sidebar's colour, with a line */
+    ha-top-app-bar-fixed { height: 100%;
+      --app-header-background-color: var(--sidebar-background-color, var(--card-background-color));
+      --app-header-border-bottom: 1px solid var(--divider-color); }
+    .about { text-align: center; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px);
+      padding: 8px 0 24px; }
+    .visits { margin: 8px 0; }
+    .visit { display: flex; justify-content: space-between; padding: 6px 0;
+      border-top: 1px solid var(--divider-color); font-size: var(--ha-font-size-m, 14px); }
+    .visit:first-child { border-top: none; }
+    .log-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .content { max-width: 860px; margin: 0 auto; padding: 16px; box-sizing: border-box;
       display: flex; flex-direction: column; gap: 16px; }
     ha-card { overflow: hidden; }
@@ -462,7 +500,13 @@ if (!customElements.get("guest-access-panel")) {
           <div class="card-actions">
             <ha-button appearance="plain" id="settings">${esc(this._t("edit"))}</ha-button>
           </div>
-        </ha-card>`;
+        </ha-card>
+        <div class="about">${esc(
+          this._t("about", {
+            version: data.about?.version ?? "",
+            commit: data.about?.commit ?? this._t("unknownCommit"),
+          }),
+        )}</div>`;
       content.querySelector("#add").addEventListener("click", () => this._openGuest(null));
       content.querySelector("#settings").addEventListener("click", () => this._openSettings());
       for (const item of content.querySelectorAll("[data-edit]")) {
@@ -491,6 +535,8 @@ if (!customElements.get("guest-access-panel")) {
       try {
         if (c.action === "lock") {
           await this._call({ type: "guest_access/lock_guest", guest_id: c.id });
+        } else if (c.action === "logDelete") {
+          await this._call({ type: "guest_access/delete_visits", guest_id: c.id });
         } else {
           await this._call({ type: "guest_access/delete_guest", guest_id: c.id });
           this._form = null;
@@ -527,6 +573,8 @@ if (!customElements.get("guest-access-panel")) {
           rooms: guest ? [...guest.rooms] : [],
           visit: guest ? String(guest.visit_minutes ?? "unlimited") : "60",
         },
+        log: { log_visits: guest?.log_visits ?? true },
+        wasLogging: guest?.log_visits ?? false,
       };
       this._error = "";
       this._confirm = null;
@@ -639,7 +687,7 @@ if (!customElements.get("guest-access-panel")) {
       const f = this._form;
       const configured = this._data.settings.rooms.map((r) => r.area_id);
       content.innerHTML = "";
-      this._prepend(content, this._errorAlert() + this._confirmAlert("delete"));
+      this._prepend(content, this._errorAlert() + this._confirmAlert("delete") + this._confirmAlert("logDelete"));
       this._bindConfirm(content);
 
       content.append(
@@ -765,7 +813,103 @@ if (!customElements.get("guest-access-panel")) {
         ),
       );
 
+      content.append(this._logCard(f));
       content.append(this._actions(() => this._saveGuest(), !!f.id));
+    }
+
+    // Visit log: date, start and length on a quarter-hour grid
+
+    _hours(minutes) {
+      return (minutes / 60).toLocaleString(this._hass.locale?.language || undefined, {
+        maximumFractionDigits: 2,
+      });
+    }
+
+    _logCard(f) {
+      const children = [];
+      const form = this._haForm(
+        [{ name: "log_visits", selector: { boolean: {} } }],
+        f.log,
+        (value) => {
+          const changed = value.log_visits !== f.log.log_visits;
+          f.log = value;
+          if (changed) this._render();
+        },
+      );
+      children.push(form);
+      const guest = f.id ? this._data.guests.find((g) => g.id === f.id) : null;
+      if (guest && f.wasLogging && !f.log.log_visits && guest.log.visits.length) {
+        const warn = document.createElement("ha-alert");
+        warn.setAttribute("alert-type", "warning");
+        warn.textContent = this._t("logOffNote");
+        children.push(warn);
+      }
+      if (guest && f.log.log_visits && f.wasLogging) {
+        const log = guest.log;
+        const lang = this._hass.locale?.language || undefined;
+        const lines = [];
+        if (guest.state.counting && guest.state.arrived) {
+          const since = new Date(guest.state.arrived);
+          since.setMinutes(Math.round(since.getMinutes() / 15) * 15, 0, 0);
+          lines.push(this._t("logRunning", { time: since.toLocaleString(lang, { dateStyle: "short", timeStyle: "short" }) }));
+        }
+        const [year, month] = log.this_month.split("-").map(Number);
+        const last = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+        for (const [key, text] of [[log.this_month, "logMonth"], [last, "logLastMonth"]]) {
+          const total = log.months[key] ?? { visits: 0, minutes: 0 };
+          lines.push(this._t(text, { visits: total.visits, hours: this._hours(total.minutes) }));
+        }
+        for (const line of lines) children.push(this._note(line));
+        const list = document.createElement("div");
+        list.className = "visits";
+        if (!log.visits.length) list.append(this._note(this._t("logNone")));
+        for (const visit of log.visits.slice(0, 10)) {
+          const start = new Date(visit.start);
+          const end = new Date(start.getTime() + visit.minutes * 60000);
+          const row = document.createElement("div");
+          row.className = "visit";
+          const when = document.createElement("span");
+          when.textContent = `${start.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "numeric" })}, ${start.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })}–${end.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })}`;
+          const length = document.createElement("span");
+          length.textContent = `${this._hours(visit.minutes)} h`;
+          row.append(when, length);
+          list.append(row);
+        }
+        children.push(list);
+        const actions = document.createElement("div");
+        actions.className = "log-actions";
+        const exportButton = this._button(this._t("logExport"), () => this._exportCsv(guest));
+        exportButton.disabled = !log.visits.length;
+        const deleteButton = this._button(this._t("logDelete"), () => {
+          this._confirm = { action: "logDelete", id: guest.id, name: guest.name };
+          this._render();
+        });
+        deleteButton.setAttribute("variant", "danger");
+        deleteButton.disabled = !log.visits.length && !Object.keys(log.months).length;
+        actions.append(exportButton, deleteButton);
+        children.push(actions);
+      }
+      return this._card(this._t("logSection"), ...children);
+    }
+
+    _exportCsv(guest) {
+      const lang = this._hass.locale?.language || undefined;
+      const rows = [this._t("csvHeader")];
+      for (const visit of [...guest.log.visits].reverse()) {
+        const start = new Date(visit.start);
+        const end = new Date(start.getTime() + visit.minutes * 60000);
+        const time = (d) => d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+        rows.push(
+          [start.toLocaleDateString(lang), time(start), time(end), this._hours(visit.minutes)].join(";"),
+        );
+      }
+      const blob = new Blob([`\ufeff${rows.join("\r\n")}\r\n`], { type: "text/csv;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      const safe = guest.name.replace(/[^\p{L}\p{N}_-]+/gu, "-");
+      link.download = `guest-access-${safe}-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
 
     async _saveGuest() {
@@ -793,6 +937,7 @@ if (!customElements.get("guest-access-panel")) {
         all_rooms: !!f.rooms.all_rooms,
         visit_minutes: f.rooms.visit === "unlimited" ? null : Number(f.rooms.visit),
         grace_minutes: Number(f.approval.grace) || 15,
+        log_visits: !!f.log.log_visits,
       };
       if (f.id) message.guest_id = f.id;
       try {

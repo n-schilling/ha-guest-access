@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 
 from homeassistant.util import dt as dt_util
@@ -11,19 +12,24 @@ from custom_components.guest_access.logic import (
     GuestStatus,
     Observed,
     evaluate,
+    forget_log,
     free_rooms,
     guest_status,
     home_since,
     locked_rooms,
+    month_key,
+    month_minutes,
     next_wake,
     only_guests_home,
     prepare_restart,
+    prune_log,
 )
 from custom_components.guest_access.model import (
     AccessData,
     Approval,
     ApprovalKind,
     Guest,
+    MonthTotal,
     Presence,
     Room,
     Settings,
@@ -345,3 +351,74 @@ def test_home_since() -> None:
     assert home_since(data) == T0
     evaluate(data, seen(), T0 + timedelta(minutes=20))
     assert home_since(data) is None
+
+
+def test_visit_log() -> None:
+    """A visit is logged once it is over, rounded to the quarter hour; a return within the grace time is the same visit."""
+    data = make(guest())
+    evaluate(data, seen("a"), T0 + timedelta(minutes=2))
+    evaluate(data, seen(), T0 + timedelta(minutes=30))
+    evaluate(data, seen("a"), T0 + timedelta(minutes=35))
+    evaluate(data, seen(), T0 + timedelta(minutes=65))
+    assert data.visits == []
+    evaluate(data, seen(), T0 + timedelta(minutes=81))
+    assert len(data.visits) == 1
+    visit = data.visits[0]
+    assert visit.start == T0
+    assert visit.minutes == 60
+    assert month_minutes(data, "a", T0) == 60
+    assert data.months["a"][month_key(T0)].visits == 1
+
+
+def test_visit_log_short_locked_and_off() -> None:
+    """A short visit counts a quarter hour; a lock ends and logs it; without a log nothing is kept."""
+    data = make(guest(), guest("b", log_visits=False))
+    evaluate(data, seen("a", "b"), T0)
+    data.guests["a"] = replace(data.guests["a"], approval=Approval())
+    evaluate(data, seen("a", "b"), T0 + timedelta(minutes=3))
+    evaluate(data, seen(), T0 + timedelta(minutes=10))
+    evaluate(data, seen(), T0 + timedelta(hours=1))
+    assert [(v.guest_id, v.minutes) for v in data.visits] == [("a", 15)]
+    assert "b" not in data.months
+
+
+def test_visit_log_locked_while_away_and_stale_visit() -> None:
+    """A lock while away ends the visit when the guest left; an unnoticed grace expiry too."""
+    data = make(guest(), guest("b"))
+    evaluate(data, seen("a", "b"), T0)
+    evaluate(data, seen(), T0 + timedelta(minutes=30))
+    data.guests["a"] = replace(data.guests["a"], approval=Approval())
+    evaluate(data, seen(), T0 + timedelta(minutes=31))
+    # b's grace time runs out without an evaluation; the next arrival logs the old visit
+    evaluate(data, seen("b"), T0 + timedelta(hours=2))
+    assert sorted((v.guest_id, v.minutes) for v in data.visits) == [("a", 30), ("b", 30)]
+
+
+def test_visit_log_after_restart() -> None:
+    """A guest locked while waiting to resume ends the visit at the restart."""
+    data = make(guest())
+    evaluate(data, seen("a"), T0)
+    prepare_restart(data, T0 + timedelta(minutes=45))
+    data.guests["a"] = replace(data.guests["a"], approval=Approval())
+    evaluate(data, seen(), T0 + timedelta(minutes=46))
+    assert [v.minutes for v in data.visits] == [45]
+
+
+def test_prune_and_forget_log() -> None:
+    """Single visits go after 90 days, totals after 13 months; forgetting removes both."""
+    data = make(guest())
+    for days in (0, 100):
+        evaluate(data, seen("a"), T0 - timedelta(days=days))
+        evaluate(data, seen(), T0 - timedelta(days=days) + timedelta(hours=1))
+        evaluate(data, seen(), T0 - timedelta(days=days) + timedelta(hours=2))
+    data.months["a"]["2020-01"] = data.months["a"][month_key(T0)]
+    prune_log(data, T0 + timedelta(hours=3))
+    assert len(data.visits) == 1
+    assert "2020-01" not in data.months["a"]
+    assert month_key(T0 - timedelta(days=100)) in data.months["a"]
+    forget_log(data, "a")
+    assert data.visits == []
+    assert "a" not in data.months
+    data.months["a"] = {"2020-01": data.months.get("x", {}).get("y") or MonthTotal(1, 15)}
+    prune_log(data, T0)
+    assert "a" not in data.months

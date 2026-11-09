@@ -24,6 +24,7 @@ from .const import (
     SIGNAL_CHANGED,
     VISIT_CHOICES,
     WS_DELETE_GUEST,
+    WS_DELETE_VISITS,
     WS_LOCK_GUEST,
     WS_SAVE_GUEST,
     WS_SAVE_SETTINGS,
@@ -56,7 +57,14 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     if DATA_REGISTERED in hass.data:
         return
     hass.data[DATA_REGISTERED] = True
-    for command in (ws_subscribe, ws_save_guest, ws_delete_guest, ws_lock_guest, ws_save_settings):
+    for command in (
+        ws_subscribe,
+        ws_save_guest,
+        ws_delete_guest,
+        ws_delete_visits,
+        ws_lock_guest,
+        ws_save_settings,
+    ):
         async_register_command(hass, command)
 
 
@@ -115,6 +123,7 @@ def ws_subscribe(hass: HomeAssistant, connection: ActiveConnection, msg: dict[st
         probatio.Optional("grace_minutes", default=15): probatio.All(
             probatio.Coerce(int), probatio.Range(1, MAX_GRACE_MINUTES)
         ),
+        probatio.Optional("log_visits", default=True): cv.boolean,
     }
 )
 @callback
@@ -148,6 +157,7 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
             all_rooms=msg["all_rooms"],
             visit_minutes=msg["visit_minutes"],
             grace_minutes=msg["grace_minutes"],
+            log_visits=msg["log_visits"],
         )
     except ValueError as err:
         connection.send_error(msg["id"], ERR_INVALID_FORMAT, str(err))
@@ -169,6 +179,24 @@ def ws_delete_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict
         connection.send_error(msg["id"], ERR_NOT_FOUND, f"no guest {msg['guest_id']}")
         return
     engine.async_delete_guest(msg["guest_id"])
+    connection.send_result(msg["id"])
+
+
+@require_admin
+@websocket_command(
+    {probatio.Required("type"): WS_DELETE_VISITS, probatio.Required("guest_id"): cv.string}
+)
+@callback
+def ws_delete_visits(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete a guest's visit log."""
+    if (engine := _engine(hass, connection, msg["id"])) is None:
+        return
+    if engine.guest(msg["guest_id"]) is None:
+        connection.send_error(msg["id"], ERR_NOT_FOUND, f"no guest {msg['guest_id']}")
+        return
+    engine.async_delete_visits(msg["guest_id"])
     connection.send_result(msg["id"])
 
 

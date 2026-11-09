@@ -75,6 +75,9 @@
       },
       "guests_home_since": {
         "name": "Guests home since"
+      },
+      "month_hours": {
+        "name": "Hours this month"
       }
     }
   },

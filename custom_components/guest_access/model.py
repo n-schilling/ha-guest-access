@@ -157,6 +157,8 @@ class Guest:
     # None is unlimited
     visit_minutes: int | None = DEFAULT_VISIT_MINUTES
     grace_minutes: int = DEFAULT_GRACE_MINUTES
+    # Keep a visit log
+    log_visits: bool = True
 
     def __post_init__(self) -> None:
         """Reject a guest the rules do not allow."""
@@ -190,6 +192,7 @@ class Guest:
             "all_rooms": self.all_rooms,
             "visit_minutes": self.visit_minutes,
             "grace_minutes": self.grace_minutes,
+            "log_visits": self.log_visits,
         }
 
     @classmethod
@@ -204,6 +207,7 @@ class Guest:
             all_rooms=bool(data.get("all_rooms", False)),
             visit_minutes=data.get("visit_minutes", DEFAULT_VISIT_MINUTES),
             grace_minutes=data.get("grace_minutes", DEFAULT_GRACE_MINUTES),
+            log_visits=bool(data.get("log_visits", True)),
         )
 
 
@@ -336,6 +340,41 @@ class Lock:
         return cls(bool(data.get("active", False)), frozenset(data.get("exempt", ())))
 
 
+@dataclass(frozen=True, slots=True)
+class Visit:
+    """One logged visit: when it began and how long it took, both on a quarter-hour grid."""
+
+    guest_id: str
+    start: datetime
+    minutes: int
+
+    def as_dict(self) -> dict[str, Any]:
+        """The visit as JSON."""
+        return {"guest_id": self.guest_id, "start": self.start.isoformat(), "minutes": self.minutes}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Visit:
+        """A visit from JSON."""
+        return cls(data["guest_id"], datetime.fromisoformat(data["start"]), int(data["minutes"]))
+
+
+@dataclass(frozen=True, slots=True)
+class MonthTotal:
+    """The visits of a guest in one month."""
+
+    visits: int = 0
+    minutes: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        """The total as JSON."""
+        return {"visits": self.visits, "minutes": self.minutes}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MonthTotal:
+        """A total from JSON."""
+        return cls(int(data.get("visits", 0)), int(data.get("minutes", 0)))
+
+
 @dataclass(slots=True)
 class AccessData:
     """Everything that is stored."""
@@ -344,6 +383,9 @@ class AccessData:
     guests: dict[str, Guest] = field(default_factory=dict)
     presence: dict[str, Presence] = field(default_factory=dict)
     lock: Lock = field(default_factory=Lock)
+    # The visit log: single visits, and per guest the totals per month ("2026-11")
+    visits: list[Visit] = field(default_factory=list)
+    months: dict[str, dict[str, MonthTotal]] = field(default_factory=dict)
 
     def presence_of(self, guest_id: str) -> Presence:
         """The runtime state of a guest, created when missing."""
@@ -360,6 +402,12 @@ class AccessData:
                 if guest_id in self.guests
             },
             "lock": self.lock.as_dict(),
+            "visits": [visit.as_dict() for visit in self.visits if visit.guest_id in self.guests],
+            "months": {
+                guest_id: {month: total.as_dict() for month, total in totals.items()}
+                for guest_id, totals in self.months.items()
+                if guest_id in self.guests
+            },
         }
 
     @classmethod
@@ -374,4 +422,9 @@ class AccessData:
                 for guest_id, presence in data.get("presence", {}).items()
             },
             lock=Lock.from_dict(data.get("lock", {})),
+            visits=[Visit.from_dict(visit) for visit in data.get("visits", ())],
+            months={
+                guest_id: {month: MonthTotal.from_dict(total) for month, total in totals.items()}
+                for guest_id, totals in data.get("months", {}).items()
+            },
         )

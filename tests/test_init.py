@@ -500,3 +500,36 @@ async def test_room_added_during_lock_with_open_door(
     await hass.async_block_till_done()
     assert office in engine.data.lock.exempt
     assert attr(hass, GUESTS_HOME, "locked_rooms") == ["Bedroom"]
+
+
+async def test_visit_log_sensor_and_off(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """The month's hours follow the finished visits; switching the log off removes it."""
+    from dataclasses import replace
+
+    engine = engine_of(entry)
+    hours = "sensor.anna_hours_this_month"
+    assert state(hass, hours) == "0.0"
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=90))
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=16))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert state(hass, hours) == "1.5"
+    engine.async_save_guest(replace(engine.data.guests["anna"], log_visits=False))
+    await hass.async_block_till_done()
+    assert state(hass, hours) == STATE_UNKNOWN
+    assert engine.data.visits == []
+
+
+async def test_month_change_wakes(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """The engine wakes at the start of the next month, so the hours start again."""
+    from custom_components.guest_access.engine import _next_month
+
+    moment = dt_util.as_utc(dt_util.parse_datetime("2026-12-31T23:30:00+01:00"))
+    start = _next_month(moment)
+    assert dt_util.as_local(start).strftime("%Y-%m-%d %H:%M") == "2027-01-01 00:00"
