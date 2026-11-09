@@ -74,9 +74,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
+      # Home Assistant starts only inside a virtual environment
       - name: Install
         run: |
-          pip install -r requirements_panel.txt
-          python -m playwright install --with-deps chromium
+          python -m venv .venv-panel
+          .venv-panel/bin/pip install -r requirements_panel.txt
+          .venv-panel/bin/python -m playwright install --with-deps chromium
       - name: Check the page in a browser
-        run: python -I scripts/panel/check_panel.py --browser chromium
+        run: .venv-panel/bin/python -I scripts/panel/check_panel.py --browser chromium
