@@ -37,7 +37,10 @@ class GuestStatus(StrEnum):
     NOT_APPROVED = "not_approved"
     # After a restart: waiting for a tracker to continue the visit
     RESUMING = "resuming"
+    # Approved, but not home
     AWAY = "away"
+    # Not home and no approval (locked, or its end has passed)
+    INACTIVE = "inactive"
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,7 +311,7 @@ def next_wake(data: AccessData, now: datetime) -> datetime | None:
     return min((moment for moment in candidates if moment > now), default=None)
 
 
-def guest_status(presence: Presence, home: bool) -> GuestStatus:
+def guest_status(guest: Guest, presence: Presence, home: bool, now: datetime) -> GuestStatus:
     """One state per guest that a dashboard shows as it is."""
     if presence.counting:
         if presence.approval_expired:
@@ -320,4 +323,7 @@ def guest_status(presence: Presence, home: bool) -> GuestStatus:
         return GuestStatus.RESUMING
     if home:
         return GuestStatus.NOT_APPROVED
+    if presence.away_since is None and not guest.approval.active(now):
+        # Away within the grace time still counts as an approved guest away
+        return GuestStatus.INACTIVE
     return GuestStatus.AWAY

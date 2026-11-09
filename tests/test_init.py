@@ -67,6 +67,7 @@ async def test_setup_and_unload(hass: HomeAssistant, entry: MockConfigEntry) -> 
         "not_approved",
         "resuming",
         "away",
+        "inactive",
     ]
     assert state(hass, ACTIVITY) == STATE_UNKNOWN
     assert state(hass, VIOLATION) == STATE_UNKNOWN
@@ -221,6 +222,10 @@ async def test_change_delete_guest(hass: HomeAssistant, entry: MockConfigEntry) 
     assert state(hass, STATUS) == "not_approved"
     assert attr(hass, ACTIVITY, "event_type") == "approval_changed"
     assert attr(hass, ACTIVITY, "kind") == "off"
+    # Locked and gone: no longer an approved guest who is away
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    assert state(hass, STATUS) == "inactive"
 
     engine.async_delete_guest("anna")
     await hass.async_block_till_done()

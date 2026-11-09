@@ -67,7 +67,8 @@
           "approval_expired": "Approval expired",
           "not_approved": "Home without approval",
           "resuming": "Waiting after restart",
-          "away": "Away"
+          "away": "Away",
+          "inactive": "No approval"
         }
       },
       "visit_ends": {

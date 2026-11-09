@@ -116,6 +116,15 @@ class Approval:
         if self.until is not None and self.until.tzinfo is None:
             raise ValueError("the end of an approval needs a time zone")
 
+    def active(self, moment: datetime) -> bool:
+        """Whether there is an approval at all: not locked and not past its end.
+
+        Time windows do not matter here: outside them the guest is still approved.
+        """
+        if self.kind is ApprovalKind.OFF:
+            return False
+        return self.until is None or moment < self.until
+
     def valid(self, moment: datetime) -> bool:
         """Whether the approval lets the guest count at that moment."""
         if self.kind is ApprovalKind.OFF:

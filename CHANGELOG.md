@@ -15,6 +15,7 @@ All notable changes to this project are documented here. The format follows
 - A visit log per guest, off by default: date, start and length on a grid, single visits and monthly totals kept for a set time, shown on the page with a CSV export; a sensor with the hours of the current month, disabled by default.
 - Settings for the resume time after a restart and for the grid and keeping of the visit log; any time per visit from 1 to 1440 minutes.
 - New guests' entities are named guest_<name>_<entity name>.
+- Status `inactive` for a guest without an approval who is not home, so dashboards can leave such guests out.
 - Names, rooms and administrators in attributes are not recorded in the history.
 - License (Apache 2.0) and installation through HACS as a custom repository; releases from main.
 - The page shows the version and the deployed commit; `scripts/deploy.sh` writes that commit.

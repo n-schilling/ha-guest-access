@@ -334,7 +334,9 @@ class GuestEngine:
         """The status of a guest."""
         guest = self.data.guests[guest_id]
         home = any(self._is(tracker, STATE_HOME) for tracker in guest.trackers)
-        return guest_status(self.data.presence_of(guest_id), home)
+        return guest_status(
+            self.data.guests[guest_id], self.data.presence_of(guest_id), home, dt_util.utcnow()
+        )
 
     @property
     def only_guests_home(self) -> bool:
@@ -373,7 +375,9 @@ class GuestEngine:
                         **presence.as_dict(),
                         "home": observed.home.get(guest.id, False),
                         "approval_valid": guest.approval.valid(now),
-                        "status": guest_status(presence, observed.home.get(guest.id, False)).value,
+                        "status": guest_status(
+                            guest, presence, observed.home.get(guest.id, False), now
+                        ).value,
                     },
                     "log": {
                         "visits": [

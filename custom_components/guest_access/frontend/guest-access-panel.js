@@ -66,6 +66,7 @@ if (!customElements.get("guest-access-panel")) {
       status_not_approved: "Home without approval",
       status_resuming: "Waiting after restart",
       status_away: "Away",
+      status_inactive: "No approval",
       visitEnds: "until {time}",
       residents: "Residents",
       lockActive: "Room lock active: only guests are home. Locked: {locked}. Free: {free}.",
@@ -154,6 +155,7 @@ if (!customElements.get("guest-access-panel")) {
       status_not_approved: "Daheim ohne Freigabe",
       status_resuming: "Wartet nach Neustart",
       status_away: "Weg",
+      status_inactive: "Ohne Freigabe",
       visitEnds: "bis {time}",
       residents: "Bewohner",
       lockActive: "Raumsperre aktiv: nur Gäste daheim. Gesperrt: {locked}. Frei: {free}.",
@@ -194,7 +196,8 @@ if (!customElements.get("guest-access-panel")) {
     approval_expired: ["mdi:account-alert", "var(--warning-color, #ffa600)"],
     not_approved: ["mdi:account-cancel", "var(--warning-color, #ffa600)"],
     resuming: ["mdi:account-sync", "var(--info-color, #039be5)"],
-    away: ["mdi:account-outline", "var(--disabled-text-color, #9e9e9e)"],
+    away: ["mdi:account-outline", "var(--secondary-text-color, #727272)"],
+    inactive: ["mdi:account-lock-outline", "var(--disabled-text-color, #9e9e9e)"],
   };
 
   const esc = (value) =>

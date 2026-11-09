@@ -81,13 +81,16 @@ stateDiagram-v2
     counting --> not_approved: locked on the page
     time_up --> not_approved: locked on the page
     approval_expired --> not_approved: locked on the page
-    not_approved --> away: all trackers away
+    not_approved --> inactive: all trackers away
+    away --> inactive: approval locked or ended
+    inactive --> away: approved again
+    inactive --> not_approved: tracker home
     counting --> resuming: Home Assistant restarts
     resuming --> counting: tracker home within the resume time
     resuming --> away: no tracker home in the resume time
 ```
 
-`away` includes the grace time: the guest does not count, but a return within it continues the visit. A visit with a `once` approval, step by step:
+`away` is an approved guest who is not home, including the grace time: the guest does not count, but a return within it continues the visit. `inactive` is a guest without an approval (locked, or its end has passed) who is not home. A visit with a `once` approval, step by step:
 
 ```mermaid
 sequenceDiagram
@@ -144,7 +147,7 @@ Each guest is a device with its entities.
 | Kind | Entity | Purpose |
 |---|---|---|
 | Per guest | `binary_sensor` "<guest> counts" (presence) | automations, the guest's state on dashboards |
-| Per guest | `sensor` "<guest> status" (enum: `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`) | dashboards show it as it is, no template |
+| Per guest | `sensor` "<guest> status" (enum: `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive`) | dashboards show it as it is, no template; `inactive` (no approval and not home) lets them leave such guests out |
 | Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
 | Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log; disabled by default, see Privacy) | the hours on a dashboard |
 | Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |

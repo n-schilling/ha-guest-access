@@ -67,7 +67,8 @@
           "approval_expired": "Freigabe abgelaufen",
           "not_approved": "Daheim ohne Freigabe",
           "resuming": "Wartet nach Neustart",
-          "away": "Weg"
+          "away": "Weg",
+          "inactive": "Ohne Freigabe"
         }
       },
       "visit_ends": {

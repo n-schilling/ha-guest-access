@@ -246,14 +246,21 @@ def test_next_wake_none() -> None:
 def test_guest_status() -> None:
     """Expired approval before time up before counting; then resuming, home, away."""
     presence = Presence(counting=True)
-    assert guest_status(presence, True) is GuestStatus.COUNTING
+    approved, locked = guest(), guest(approval=Approval())
+    ended = guest(approval=Approval(ApprovalKind.UNTIL, T0))
+    assert guest_status(approved, presence, True, T0) is GuestStatus.COUNTING
     presence.time_up = True
-    assert guest_status(presence, True) is GuestStatus.TIME_UP
+    assert guest_status(approved, presence, True, T0) is GuestStatus.TIME_UP
     presence.approval_expired = True
-    assert guest_status(presence, True) is GuestStatus.APPROVAL_EXPIRED
-    assert guest_status(Presence(resume_until=T0), True) is GuestStatus.RESUMING
-    assert guest_status(Presence(), True) is GuestStatus.NOT_APPROVED
-    assert guest_status(Presence(), False) is GuestStatus.AWAY
+    assert guest_status(approved, presence, True, T0) is GuestStatus.APPROVAL_EXPIRED
+    assert guest_status(approved, Presence(resume_until=T0), True, T0) is GuestStatus.RESUMING
+    assert guest_status(locked, Presence(), True, T0) is GuestStatus.NOT_APPROVED
+    assert guest_status(approved, Presence(), False, T0) is GuestStatus.AWAY
+    # Without an approval and not home: inactive; within the grace time still away
+    assert guest_status(locked, Presence(), False, T0) is GuestStatus.INACTIVE
+    assert guest_status(ended, Presence(), False, T0) is GuestStatus.INACTIVE
+    assert guest_status(ended, Presence(), False, T0 - timedelta(minutes=1)) is GuestStatus.AWAY
+    assert guest_status(locked, Presence(away_since=T0), False, T0) is GuestStatus.AWAY
 
 
 def test_resuming_guest_keeps_rooms() -> None:
@@ -277,9 +284,11 @@ def test_window_reopens_clears_expiry() -> None:
     morning = datetime.combine(today.date(), time(9), tzinfo=today.tzinfo)
     evaluate(data, seen("a"), morning)
     assert types(evaluate(data, seen("a"), morning + timedelta(hours=12))) == ["approval_expired"]
-    assert guest_status(data.presence["a"], True) is GuestStatus.APPROVAL_EXPIRED
+    assert (
+        guest_status(data.guests["a"], data.presence["a"], True, T0) is GuestStatus.APPROVAL_EXPIRED
+    )
     evaluate(data, seen("a"), morning + timedelta(days=1))
-    assert guest_status(data.presence["a"], True) is GuestStatus.COUNTING
+    assert guest_status(data.guests["a"], data.presence["a"], True, T0) is GuestStatus.COUNTING
     assert types(evaluate(data, seen("a"), morning + timedelta(days=1, hours=12))) == [
         "approval_expired"
     ]
