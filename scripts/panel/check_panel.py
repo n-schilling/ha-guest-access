@@ -799,6 +799,9 @@ async def main() -> int:
         except Exception as err:
             checks.failed.append(f"setup: {err!r}")
             print(f"FAIL setup: {err!r}")
+            log = directory / "hass.log"
+            if log.exists():
+                print("".join(log.read_text(errors="replace").splitlines(keepends=True)[-60:]))
         finally:
             await instance.stop(session)
     errors = (

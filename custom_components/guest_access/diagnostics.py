@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from homeassistant.const import STATE_HOME, STATE_NOT_HOME, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -24,9 +25,19 @@ def _minutes(moment: datetime | None, now: datetime) -> int | None:
     return round((moment - now).total_seconds() / 60)
 
 
+# A tracker or person in a zone has the zone's name as state, which can say
+# where someone is; diagnostics only tell whether it is at home
+_PLAIN_STATES = frozenset({STATE_HOME, STATE_NOT_HOME, STATE_UNKNOWN, STATE_UNAVAILABLE})
+
+
 def _state(hass: HomeAssistant, entity_id: str) -> str:
+    """The state of a tracker, person or door, a zone name only as "zone"."""
     current = hass.states.get(entity_id)
-    return "missing" if current is None else current.state
+    if current is None:
+        return "missing"
+    if entity_id.startswith("binary_sensor.") or current.state in _PLAIN_STATES:
+        return current.state
+    return "zone"
 
 
 async def async_get_config_entry_diagnostics(

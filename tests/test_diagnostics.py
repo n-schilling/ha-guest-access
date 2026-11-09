@@ -68,3 +68,20 @@ async def test_diagnostics_name_problems(
     assert result["guests"][0]["trackers"] == ["missing"]
     assert result["guests"][0]["status"] == "away"
     assert result["problems"] == ["missing_tracker"]
+
+
+async def test_diagnostics_hide_zones(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, entry: MockConfigEntry
+) -> None:
+    """A tracker or resident in a zone shows up as "zone", never with the zone's name."""
+    hass.states.async_set(TRACKER, "Grandmother's house")
+    hass.states.async_set(RESIDENT, "Office Main Street")
+    await hass.async_block_till_done()
+
+    result = await _diagnostics(hass, hass_client, entry)
+
+    text = json.dumps(result)
+    assert "Grandmother" not in text
+    assert "Main Street" not in text
+    assert result["guests"][0]["trackers"] == ["zone"]
+    assert result["settings"]["residents"] == ["zone"]
