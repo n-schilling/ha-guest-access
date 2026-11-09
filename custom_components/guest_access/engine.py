@@ -359,6 +359,8 @@ class GuestEngine:
             self._rename_device(guest)
         self._watch()
         self._evaluate()
+        # The evaluation saves only what it changes itself, not this change
+        self._save()
         if old is None or old.approval != guest.approval:
             self._raise(
                 guest.id,
@@ -389,6 +391,7 @@ class GuestEngine:
             registry.async_remove_device(device.id)
         self._watch()
         self._evaluate()
+        self._save()
 
     @callback
     def async_save_settings(self, settings: Settings) -> None:
@@ -402,6 +405,7 @@ class GuestEngine:
                 self.data.guests[guest.id] = replace(guest, rooms=kept)
         self._watch()
         self._evaluate()
+        self._save()
 
     def _rename_device(self, guest: Guest) -> None:
         registry = dr.async_get(self.hass)

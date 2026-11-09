@@ -335,3 +335,39 @@ async def test_attribute_change_not_evaluated(hass: HomeAssistant, entry: MockCo
         hass.states.async_set(TRACKER, "home", {"latitude": 1.0})
         await hass.async_block_till_done()
     evaluate.assert_not_called()
+
+
+async def test_admin_changes_are_saved(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Changes on the page reach the store without an unload, so a crash keeps them."""
+    from dataclasses import replace
+
+    from custom_components.guest_access.model import Guest, Settings
+
+    engine = engine_of(entry)
+
+    def saved() -> dict[str, Any]:
+        freezer.tick(timedelta(seconds=5))
+        async_fire_time_changed(hass)
+        data: dict[str, Any] = hass_storage[STORAGE_KEY]["data"]
+        return {**data, "guests": {guest["id"]: guest for guest in data["guests"]}}
+
+    engine.async_save_guest(Guest("ben", "Ben", ("device_tracker.ben",)))
+    await hass.async_block_till_done()
+    assert "ben" in saved()["guests"]
+
+    engine.async_save_guest(replace(engine.data.guests["ben"], name="Ben B"))
+    await hass.async_block_till_done()
+    assert saved()["guests"]["ben"]["name"] == "Ben B"
+
+    engine.async_save_settings(Settings((RESIDENT, "person.robin"), ()))
+    await hass.async_block_till_done()
+    assert saved()["settings"]["residents"] == [RESIDENT, "person.robin"]
+
+    engine.async_delete_guest("ben")
+    await hass.async_block_till_done()
+    assert "ben" not in saved()["guests"]
