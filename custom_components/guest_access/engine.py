@@ -50,6 +50,7 @@ from .logic import (
     forget_log,
     free_rooms,
     guest_status,
+    iso_seconds,
     locked_rooms,
     month_key,
     next_wake,
@@ -284,7 +285,7 @@ class GuestEngine:
                 "area_id": room.area_id,
                 "area": room.area_id if area is None else area.name,
                 "door": room.door,
-                "guests": [guest.name for guest in counting_guests(self.data)],
+                "guests": [self.display_name(guest) for guest in counting_guests(self.data)],
             },
         )
 
@@ -348,10 +349,17 @@ class GuestEngine:
         area = ar.async_get(self.hass).async_get_area(area_id)
         return area_id if area is None else area.name
 
+    def display_name(self, guest: Guest) -> str:
+        """The name to show for a guest: a device name given in Home Assistant wins."""
+        device = dr.async_get(self.hass).async_get_device_by_identifier(
+            (DOMAIN, guest.id), self.entry.entry_id
+        )
+        return device.name_by_user if device is not None and device.name_by_user else guest.name
+
     def summary(self) -> dict[str, Any]:
         """Who counts and which rooms are free or locked, by name; the guests to show."""
         return {
-            "guests": [guest.name for guest in counting_guests(self.data)],
+            "guests": [self.display_name(guest) for guest in counting_guests(self.data)],
             "free_rooms": sorted(self.area_name(area) for area in free_rooms(self.data)),
             "locked_rooms": sorted(self.area_name(area) for area in locked_rooms(self.data)),
             "guest_list": self.guest_list(),
@@ -364,14 +372,12 @@ class GuestEngine:
         status sensor to show the status in the user's language, and the end of the
         visit while the guest counts with time left or time up.
         """
-        devices = dr.async_get(self.hass)
         entities = er.async_get(self.hass)
         shown = []
         for guest in self.data.guests.values():
             status = self.status(guest.id)
             if status is GuestStatus.INACTIVE:
                 continue
-            device = devices.async_get_device_by_identifier((DOMAIN, guest.id), self.entry.entry_id)
             presence = self.data.presence_of(guest.id)
             ends = (
                 presence.visit_ends
@@ -380,13 +386,12 @@ class GuestEngine:
             )
             shown.append(
                 {
-                    "name": device.name_by_user if device and device.name_by_user else guest.name,
+                    "name": self.display_name(guest),
                     "status": status.value,
                     "status_entity": entities.async_get_entity_id(
                         Platform.SENSOR, DOMAIN, f"{guest.id}_status"
                     ),
-                    # As the visit-end sensor shows it, to the second
-                    "visit_ends": None if ends is None else ends.replace(microsecond=0).isoformat(),
+                    "visit_ends": iso_seconds(ends),
                 }
             )
         return sorted(shown, key=lambda item: item["name"])

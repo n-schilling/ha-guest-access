@@ -229,6 +229,66 @@ A sidebar page for administrators only: the list of guests with their state, a f
 
 Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`; when that happens within the resume time, the visit goes on with its end and without a new `arrived`, otherwise the guest has left.
 
+## Interface
+
+Automations, dashboards and scripts build on what this section lists. From 1.0.0 on it changes only with a new major version: a later minor version may add entities, attributes, event types, event data, status values or optional command parameters, but renames, removals and changed meanings wait for the next major version and are listed in the changelog. Before 1.0.0 it may still change between minor versions. `tests/test_contract.py` pins all of it.
+
+Times are ISO 8601 with offset, to the second. Guest names in attributes and event data are the name of the guest's device, so a name given to the device in Home Assistant wins over the name on the page.
+
+### Entities
+
+IDs as created in English; Home Assistant takes the entity name in its own language for new IDs (in German `binary_sensor.guest_anna_zahlt`). Renaming keeps an ID. The unique IDs do not change: `<entry>` is the config entry, `<guest>` the guest's ID (32 hex digits, also the device identifier `(guest_access, <guest>)`).
+
+| Entity ID | Unique ID | State |
+|---|---|---|
+| `binary_sensor.guest_access_guests_home` | `<entry>_guests_home` | `on` while any guest counts |
+| `binary_sensor.guest_access_only_guests_home` | `<entry>_only_guests_home` | `on` while guests count and no resident is home |
+| `sensor.guest_access_guests_home_since` | `<entry>_guests_home_since` | earliest arrival of the guests who count, else unknown |
+| `event.guest_access_room_violation` | `<entry>_room_violation` | event type `opened` |
+| `binary_sensor.guest_<name>_counts` | `<guest>_counts` | `on` while the guest counts |
+| `sensor.guest_<name>_status` | `<guest>_status` | `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive` |
+| `sensor.guest_<name>_visit_ends` | `<guest>_visit_ends` | end of the visit while the guest counts with a time per visit, else unknown |
+| `sensor.guest_<name>_hours_this_month` | `<guest>_month_hours` | hours of the finished visits this month; unknown without a visit log; disabled by default |
+| `event.guest_<name>_activity` | `<guest>_activity` | event types below |
+
+### Events
+
+| Entity | Event type | Data |
+|---|---|---|
+| guest | `arrived` | `visit_ends`: end of the visit, `null` when unlimited |
+| guest | `left` | none |
+| guest | `time_up` | `visit_ends` |
+| guest | `approval_expired` | `kind`, `until`, `windows`: the approval that no longer applies |
+| guest | `approval_changed` | `kind`, `until`, `windows`: the new approval; `reason`: `changed` (by an administrator) or `visit_over` (a once approval after its visit); `by`: name of the administrator, `null` for `visit_over` |
+| room violation | `opened` | `area_id`, `area` (name), `door` (entity ID), `guests`: names of the guests who count |
+
+`kind` is `off`, `once`, `until` or `permanent`; `until` a time or `null`; `windows` a list of `{"weekdays": [0–6, Monday 0], "start": "HH:MM", "end": "HH:MM"}` in local time, an end before the start reaching past midnight. A change by an administrator carries that user's context, so the logbook names them.
+
+### Attributes of "Guests home"
+
+| Attribute | Value |
+|---|---|
+| `guests` | names of the guests who count |
+| `free_rooms`, `locked_rooms` | names of the lockable rooms that are free or locked right now |
+| `guest_list` | every guest but inactive ones, sorted by name: `name`, `status` (as the status sensor), `status_entity` (its entity ID), `visit_ends` (while the guest counts with time left or time up, else `null`) |
+
+### WebSocket commands
+
+For administrators only; the page uses them, and so can a script with an administrator's token.
+
+| Command | Parameters |
+|---|---|
+| `guest_access/subscribe` | none; sends the page's data now and after every change. Its content serves the page and is not part of this interface |
+| `guest_access/save_guest` | `guest_id` (to change a guest, left out for a new one), `name`, `trackers`, `approval` (`kind`, `until`, `windows`), `rooms`, `all_rooms`, `visit_minutes` (1–1440 or `null`), `grace_minutes` (1–240), `log_visits`; returns `guest_id` |
+| `guest_access/lock_guest` | `guest_id`; sets the approval to `off` |
+| `guest_access/delete_guest` | `guest_id`; removes the guest with its device and visit log |
+| `guest_access/delete_visits` | `guest_id`; deletes the guest's visit log |
+| `guest_access/save_settings` | `residents`, `rooms` (`area_id`, `door`), optionally `resume_minutes`, `log_grid_minutes`, `log_keep_days`, `log_keep_months` |
+
+### Store
+
+`.storage/guest_access`, version 1, holds the settings, the guests, their runtime state, the room lock and the visit log. A new version comes with a migration from the one before; Home Assistant backups include the file.
+
 ## Installation
 
 1. **Settings → Marketplace → Add from link** (top right), enter `https://github.com/n-schilling/ha-guest-access` as GitHub link and add it. Adding a repository by link asks you to connect GitHub once.

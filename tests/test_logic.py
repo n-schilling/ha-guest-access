@@ -7,7 +7,6 @@ from datetime import UTC, datetime, time, timedelta
 
 from homeassistant.util import dt as dt_util
 
-from custom_components.guest_access.const import RESUME_WINDOW
 from custom_components.guest_access.logic import (
     GuestStatus,
     Observed,
@@ -162,7 +161,7 @@ def test_restart_resume() -> None:
     prepare_restart(data, start)
     presence = data.presence["a"]
     assert not presence.counting
-    assert presence.resume_until == start + RESUME_WINDOW
+    assert presence.resume_until == start + Settings().resume_window
     assert next_wake(data, start) == presence.resume_until
     assert evaluate(data, seen(), start) == []
     assert evaluate(data, seen("a"), start + timedelta(minutes=2)) == []
@@ -186,7 +185,7 @@ def test_restart_not_back() -> None:
     data = make(guest(approval=once))
     evaluate(data, seen("a"), T0)
     prepare_restart(data, T0)
-    end = T0 + RESUME_WINDOW
+    end = T0 + Settings().resume_window
     assert types(evaluate(data, seen(), end)) == ["left"]
     presence = data.presence["a"]
     assert presence.resume_until is None
@@ -232,7 +231,7 @@ def test_lock_held_while_resuming() -> None:
     evaluate(data, seen(), T0 + timedelta(minutes=1))
     assert data.lock.active
     assert data.lock.exempt == frozenset({"kids"})
-    evaluate(data, seen(), T0 + RESUME_WINDOW)
+    evaluate(data, seen(), T0 + Settings().resume_window)
     assert not data.lock.active
 
 

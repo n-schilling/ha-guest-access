@@ -50,9 +50,10 @@ class GuestCountsSensor(GuestEntity, BinarySensorEntity):
 
 
 class GuestsHomeSensor(HubEntity, BinarySensorEntity):
+    """On while any guest counts: what other parts of Home Assistant read to treat guests as home."""
+
     # Names and rooms are for automations now, not for the history
     _unrecorded_attributes = frozenset({"guests", "free_rooms", "locked_rooms", "guest_list"})
-    """On while any guest counts: what other parts of Home Assistant read to treat guests as home."""
 
     _attr_device_class = BinarySensorDeviceClass.PRESENCE
 

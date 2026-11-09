@@ -63,8 +63,9 @@ class Raised:
     data: dict[str, Any] = field(default_factory=dict)
 
 
-def _iso(moment: datetime | None) -> str | None:
-    return None if moment is None else moment.isoformat()
+def iso_seconds(moment: datetime | None) -> str | None:
+    """A time for events and attributes: ISO 8601 to the second, as the sensors show it."""
+    return None if moment is None else moment.replace(microsecond=0).isoformat()
 
 
 def prepare_restart(data: AccessData, now: datetime) -> None:
@@ -140,7 +141,7 @@ def _arrive(data: AccessData, guest: Guest, presence: Presence, now: datetime) -
     presence.counting = True
     presence.arrived = now
     presence.visit_ends = None if guest.visit is None else now + guest.visit
-    return Raised(guest.id, EVENT_ARRIVED, {"visit_ends": _iso(presence.visit_ends)})
+    return Raised(guest.id, EVENT_ARRIVED, {"visit_ends": iso_seconds(presence.visit_ends)})
 
 
 def _leave(guest: Guest, presence: Presence, at: datetime) -> Raised:
@@ -156,7 +157,9 @@ def _check_counting(guest: Guest, presence: Presence, now: datetime) -> list[Rai
     raised = []
     if presence.visit_ends is not None and now >= presence.visit_ends and not presence.time_up:
         presence.time_up = True
-        raised.append(Raised(guest.id, EVENT_TIME_UP, {"visit_ends": _iso(presence.visit_ends)}))
+        raised.append(
+            Raised(guest.id, EVENT_TIME_UP, {"visit_ends": iso_seconds(presence.visit_ends)})
+        )
     valid = guest.approval.valid(now)
     if not valid and not presence.approval_expired:
         presence.approval_expired = True

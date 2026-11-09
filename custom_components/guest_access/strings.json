@@ -47,6 +47,34 @@
               "approval_expired": "Approval expired",
               "approval_changed": "Approval changed"
             }
+          },
+          "visit_ends": {
+            "name": "Visit ends"
+          },
+          "kind": {
+            "name": "Approval",
+            "state": {
+              "off": "Locked",
+              "once": "Once until",
+              "until": "Permanent until",
+              "permanent": "Permanent"
+            }
+          },
+          "until": {
+            "name": "Until"
+          },
+          "windows": {
+            "name": "Time windows"
+          },
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "changed": "Changed by an administrator",
+              "visit_over": "Visit over"
+            }
+          },
+          "by": {
+            "name": "Changed by"
           }
         }
       },
@@ -57,6 +85,18 @@
             "state": {
               "opened": "Door opened"
             }
+          },
+          "area_id": {
+            "name": "Area ID"
+          },
+          "area": {
+            "name": "Room"
+          },
+          "door": {
+            "name": "Door"
+          },
+          "guests": {
+            "name": "Guests"
           }
         }
       }

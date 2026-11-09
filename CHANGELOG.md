@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - unreleased
+
+### Added
+
+- The interface is described in the README (section Interface) and pinned by tests: entity and unique IDs, event types and data, attributes, WebSocket commands, store format.
+- Names for the data of the guests' events and of the room violation in English and German.
+
+### Changed
+
+- Guest names in the attributes of "Guests home" and in the room violation follow a device name given in Home Assistant, as `guest_list` already did.
+- `visit_ends` in the events `arrived` and `time_up` is to the second, as the sensor and `guest_list` show it.
+
 ## [0.1.0] - 2026-11-09
 
 ### Added

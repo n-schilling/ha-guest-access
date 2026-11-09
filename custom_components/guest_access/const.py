@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Final
 
 DOMAIN: Final = "guest_access"
@@ -22,7 +21,6 @@ MAX_VISIT_MINUTES: Final = 24 * 60
 # reports home within this time; otherwise the guest has left
 DEFAULT_RESUME_MINUTES: Final = 10
 MAX_RESUME_MINUTES: Final = 60
-RESUME_WINDOW: Final = timedelta(minutes=DEFAULT_RESUME_MINUTES)
 # Visit log: grid, how long single visits and monthly totals are kept
 DEFAULT_LOG_GRID_MINUTES: Final = 15
 MAX_LOG_GRID_MINUTES: Final = 60
