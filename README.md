@@ -8,6 +8,35 @@ Status: 0.1.0 in development, not deployed yet.
 
 ## Design
 
+### Overview
+
+```mermaid
+flowchart LR
+    admin(["Administrator"]) -->|"page, admin only"| ws["WebSocket commands"]
+    subgraph ha["Home Assistant"]
+        trackers["device_tracker<br/>of any integration"]
+        persons["person<br/>residents"]
+        doors["binary_sensor<br/>door contacts"]
+        areas["areas<br/>lockable rooms"]
+    end
+    subgraph ga["Guest Access"]
+        ws --> engine["Engine<br/>rules, deadlines, room lock"]
+        store[("Store<br/>profiles and runtime state")] <--> engine
+    end
+    trackers --> engine
+    persons --> engine
+    doors --> engine
+    areas --> engine
+    engine --> entities["Entities<br/>per guest and summary"]
+    engine --> repairs["Repair issues"]
+    entities --> automations["Automations"]
+    automations --> alarm["Alarm system"]
+    automations --> push["Push"]
+    automations --> log["Alarm log, image series"]
+```
+
+Guest Access reads trackers, residents and door contacts and decides; everything to the right of the entities is an automation of the installation, not part of the integration.
+
 ### Guests
 
 A guest is a profile with:
@@ -34,6 +63,54 @@ When no tracker is home any more, the guest stops counting at once (`left`). A r
 
 A `once` approval is one visit: when no tracker of the guest has been home for the grace time, the approval switches to `off`. A guest who returns later needs a new approval.
 
+The status sensor of a guest follows these rules:
+
+```mermaid
+stateDiagram-v2
+    [*] --> away
+    away --> counting: tracker home, approval valid
+    away --> not_approved: tracker home, approval not valid
+    not_approved --> counting: approval becomes valid
+    counting --> time_up: visit time over
+    counting --> approval_expired: end passed or window closed
+    time_up --> approval_expired: end passed or window closed
+    counting --> away: all trackers away (left)
+    time_up --> away: all trackers away (left)
+    approval_expired --> away: all trackers away (left)
+    counting --> not_approved: locked on the page
+    time_up --> not_approved: locked on the page
+    approval_expired --> not_approved: locked on the page
+    not_approved --> away: all trackers away
+    counting --> resuming: Home Assistant restarts
+    resuming --> counting: tracker home within 10 min
+    resuming --> away: no tracker home after 10 min
+```
+
+`away` includes the grace time: the guest does not count, but a return within it continues the visit. A visit with a `once` approval, step by step:
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant T as Trackers
+    participant GA as Guest Access
+    participant A as Automations
+    Admin->>GA: approval once until Sunday 18:00
+    GA-->>A: approval_changed (reason changed, by Admin)
+    T->>GA: phone home
+    GA-->>A: arrived, counts on, visit ends at +60 min
+    T->>GA: phone away (taking out the rubbish)
+    GA-->>A: left, counts off
+    T->>GA: phone home again after 5 min
+    Note over GA: within the grace time:<br/>same visit, same end, no arrived
+    GA-->>A: counts on
+    Note over GA: visit time over while home
+    GA-->>A: time_up, guest keeps counting
+    T->>GA: phone away
+    GA-->>A: left, counts off
+    Note over GA: grace time over
+    GA-->>A: approval_changed (reason visit_over), approval off
+```
+
 ### Several guests
 
 If only guests are home, their rooms add up, because an opened door cannot be told apart by guest: the free rooms are the union of the rooms of all guests who count. Time is per guest.
@@ -46,10 +123,21 @@ When the visit time of a guest runs out, or the approval ends (its end passes or
 
 Rooms are configured once on the entry: each lockable room is a Home Assistant area with exactly one door contact (`binary_sensor`), so names follow the area registry. A room that stops being lockable is removed from every guest. The lock starts when guests count and no resident is home, given as a list of `person` entities on the entry. A room is locked while its door is closed, and an opening is a change to open from the last known real state closed (a door opened while its contact was unavailable counts once the contact reports; a contact that returns to a door already open before does not); guests waiting to resume after a restart keep their rooms free unless they were locked; a room whose door is open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more.
 
+```mermaid
+flowchart TD
+    change["tracker, resident or door changes"] --> counts{"a guest counts?<br/>a guest resuming after a restart<br/>keeps a running lock"}
+    counts -->|no| off["no lock"]
+    counts -->|yes| resident{"a resident<br/>home?"}
+    resident -->|yes| off
+    resident -->|no| start["lock active<br/>doors open now stay free"]
+    start --> door{"a door opens<br/>closed to open"}
+    door --> free{"room free?<br/>open at lock start, or in the rooms<br/>of a guest who counts or resumes"}
+    free -->|yes| nothing["nothing happens"]
+    free -->|no| violation["Room violation: opened<br/>area, door, guests"]
+```
+
 ### What Home Assistant gets
 
-| Kind | Entity or event | Purpose |
-|---|---|---|
 Each guest is a device with its entities.
 
 | Kind | Entity | Purpose |
