@@ -549,3 +549,51 @@ async def test_month_change_wakes(hass: HomeAssistant, entry: MockConfigEntry) -
     moment = dt_util.as_utc(dt_util.parse_datetime("2026-12-31T23:30:00+01:00"))
     start = _next_month(moment)
     assert dt_util.as_local(start).strftime("%Y-%m-%d %H:%M") == "2027-01-01 00:00"
+
+
+async def test_guest_list(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """The guest list shows every guest but inactive ones, with status and visit end."""
+
+    def guest_list() -> list[dict[str, Any]]:
+        value: list[dict[str, Any]] = attr(hass, GUESTS_HOME, "guest_list")
+        return value
+
+    # Approved but not home: shown as away, without an end
+    assert guest_list() == [
+        {"name": "Anna", "status": "away", "status_entity": STATUS, "visit_ends": None}
+    ]
+
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    ends = dt_util.parse_datetime(state(hass, VISIT_ENDS))
+    assert ends is not None
+    assert guest_list() == [
+        {
+            "name": "Anna",
+            "status": "counting",
+            "status_entity": STATUS,
+            "visit_ends": ends.isoformat(),
+        }
+    ]
+
+    freezer.tick(timedelta(minutes=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert guest_list()[0]["status"] == "time_up"
+    assert guest_list()[0]["visit_ends"] == ends.isoformat()
+
+    # The device name a user gives wins over the profile name
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "anna"), entry.entry_id)
+    assert device is not None
+    dr.async_get(hass).async_update_device(device.id, name_by_user="Anna B.")
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    assert guest_list()[0]["name"] == "Anna B."
+
+    # Locked and away: inactive, left out
+    engine_of(entry).async_lock_guest("anna", None, "Admin")
+    await hass.async_block_till_done()
+    assert state(hass, STATUS) == "inactive"
+    assert guest_list() == []

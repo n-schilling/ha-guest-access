@@ -166,7 +166,7 @@ Each guest is a device with its entities.
 | Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log; disabled by default, see Privacy) | the hours on a dashboard |
 | Per guest | `event` "<guest>" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
-| Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms | the one entity automations read to treat guests as home |
+| Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms, and `guest_list` (every guest but inactive ones, by name: `name`, `status`, `status_entity`, `visit_ends` while the guest counts with time left or time up) | the one entity automations read to treat guests as home; `guest_list` lets a dashboard list the guests without searching the entity registry |
 | Summary | `sensor` "Guests home since" (timestamp: the earliest arrival of the guests who count; unknown while none counts; a restart or a return within the grace time does not move it) | dashboards showing since when guests are home |
 | Room lock | `event` "Room violation" with the type `opened`, carrying the area, the door and the guests who count | push, log and image series stay in automations |
 
@@ -197,7 +197,7 @@ On the page, under residents and rooms:
 
 Guest Access stores only the profiles, the visit in progress and, for guests with a visit log, the rounded visits. It writes no guest names to the Home Assistant log.
 
-- The names, rooms and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
+- The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
 - The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
 - Home Assistant still records the state of each guest's entities (counts, status, events) to the minute for as long as your recorder keeps history. If the history should not hold more than the visit log, exclude the guests' entities from the recorder, for example:
 

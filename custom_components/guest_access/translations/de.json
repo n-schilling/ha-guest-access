@@ -25,6 +25,9 @@
           },
           "locked_rooms": {
             "name": "Gesperrte Räume"
+          },
+          "guest_list": {
+            "name": "Gästeliste"
           }
         }
       },

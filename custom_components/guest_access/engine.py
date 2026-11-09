@@ -11,7 +11,7 @@ from typing import Any
 import uuid
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_HOME, STATE_OFF, STATE_ON
+from homeassistant.const import STATE_HOME, STATE_OFF, STATE_ON, Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
@@ -349,12 +349,47 @@ class GuestEngine:
         return area_id if area is None else area.name
 
     def summary(self) -> dict[str, Any]:
-        """Who counts and which rooms are free or locked, by name."""
+        """Who counts and which rooms are free or locked, by name; the guests to show."""
         return {
             "guests": [guest.name for guest in counting_guests(self.data)],
             "free_rooms": sorted(self.area_name(area) for area in free_rooms(self.data)),
             "locked_rooms": sorted(self.area_name(area) for area in locked_rooms(self.data)),
+            "guest_list": self.guest_list(),
         }
+
+    def guest_list(self) -> list[dict[str, Any]]:
+        """Every guest except inactive ones, by name, for a dashboard to show as it is.
+
+        Each entry has the guest's name (as the device is named), the status, the
+        status sensor to show the status in the user's language, and the end of the
+        visit while the guest counts with time left or time up.
+        """
+        devices = dr.async_get(self.hass)
+        entities = er.async_get(self.hass)
+        shown = []
+        for guest in self.data.guests.values():
+            status = self.status(guest.id)
+            if status is GuestStatus.INACTIVE:
+                continue
+            device = devices.async_get_device_by_identifier((DOMAIN, guest.id), self.entry.entry_id)
+            presence = self.data.presence_of(guest.id)
+            ends = (
+                presence.visit_ends
+                if presence.counting and status in (GuestStatus.COUNTING, GuestStatus.TIME_UP)
+                else None
+            )
+            shown.append(
+                {
+                    "name": device.name_by_user if device and device.name_by_user else guest.name,
+                    "status": status.value,
+                    "status_entity": entities.async_get_entity_id(
+                        Platform.SENSOR, DOMAIN, f"{guest.id}_status"
+                    ),
+                    # As the visit-end sensor shows it, to the second
+                    "visit_ends": None if ends is None else ends.replace(microsecond=0).isoformat(),
+                }
+            )
+        return sorted(shown, key=lambda item: item["name"])
 
     def snapshot(self) -> dict[str, Any]:
         """Everything the page shows."""

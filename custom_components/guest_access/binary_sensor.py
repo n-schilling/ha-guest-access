@@ -51,7 +51,7 @@ class GuestCountsSensor(GuestEntity, BinarySensorEntity):
 
 class GuestsHomeSensor(HubEntity, BinarySensorEntity):
     # Names and rooms are for automations now, not for the history
-    _unrecorded_attributes = frozenset({"guests", "free_rooms", "locked_rooms"})
+    _unrecorded_attributes = frozenset({"guests", "free_rooms", "locked_rooms", "guest_list"})
     """On while any guest counts: what other parts of Home Assistant read to treat guests as home."""
 
     _attr_device_class = BinarySensorDeviceClass.PRESENCE
@@ -67,7 +67,7 @@ class GuestsHomeSensor(HubEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The guests who count and the free and locked rooms, by name."""
+        """The guests who count, the free and locked rooms, and the guests to show."""
         return self.engine.summary()
 
 

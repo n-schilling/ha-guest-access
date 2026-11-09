@@ -16,7 +16,8 @@ All notable changes to this project are documented here. The format follows
 - Settings for the resume time after a restart and for the grid and keeping of the visit log; any time per visit from 1 to 1440 minutes.
 - New guests' entities are named guest_<name>_<entity name>.
 - Status `inactive` for a guest without an approval who is not home, so dashboards can leave such guests out.
-- Names, rooms and administrators in attributes are not recorded in the history.
+- Attribute `guest_list` on "Guests home": every guest but inactive ones with name, status, status sensor and visit end, so a dashboard can list the guests as they are.
+- Names, rooms, the guest list and administrators in attributes are not recorded in the history.
 - Diagnostics with placeholders instead of names, entities and areas.
 - License (Apache 2.0) and installation through the Marketplace by link; requires Home Assistant 2026.11; releases from main.
 - The page shows the version and the deployed commit; `scripts/deploy.sh` writes that commit.
