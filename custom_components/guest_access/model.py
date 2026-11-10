@@ -21,7 +21,6 @@ from .const import (
     MAX_LOG_GRID_MINUTES,
     MAX_LOG_KEEP_DAYS,
     MAX_LOG_KEEP_MONTHS,
-    MAX_NAME_LENGTH,
     MAX_NOTE_LENGTH,
     MAX_RESUME_MINUTES,
     MAX_VISIT_MINUTES,
@@ -197,8 +196,6 @@ class Guest:
         """Reject a guest the rules do not allow."""
         if not self.name.strip():
             raise ValueError("a guest needs a name")
-        if len(self.name) > MAX_NAME_LENGTH:
-            raise ValueError(f"a name has at most {MAX_NAME_LENGTH} characters")
         if not self.trackers:
             raise ValueError("a guest needs at least one tracker")
         if self.visit_minutes is not None and not 1 <= self.visit_minutes <= MAX_VISIT_MINUTES:

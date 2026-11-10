@@ -200,7 +200,7 @@ On the page, under residents and rooms:
 Guest Access stores only the profiles, the visit in progress and, for guests with a visit log, the rounded visits. It writes no guest names to the Home Assistant log.
 
 - The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
-- A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. Guest Access deletes only the photos uploaded through it: a replaced or removed photo, the photo of a deleted guest, an upload never saved with a guest (after an hour) and all of them when the integration is removed; an image of a person or an area is never taken as a guest's photo nor deleted. The photo's address is not recorded in the history. Leave the photo out if that is too much.
+- A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. Because of that Guest Access stores a photo without its metadata (where and when it was taken, the device), at most 1024 pixels wide and high and without its file name. Guest Access deletes only the photos uploaded through it: a replaced or removed photo, the photo of a deleted guest, an upload never saved with a guest (after a day) and all of them when the integration is removed; an image of a person or an area is never taken as a guest's photo nor deleted. The photo's address is not recorded in the history. Leave the photo out if that is too much.
 - A guest's note stays on the page; it is in no entity, attribute, history or diagnostics, only in the store (and so in backups).
 - The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
 - Home Assistant still records the state of each guest's entities (counts, status, events) to the minute for as long as your recorder keeps history. If the history should not hold more than the visit log, exclude the guests' entities from the recorder, for example:
@@ -371,7 +371,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ### Photo upload
 
-`POST /api/guest_access/picture` with a multipart field `file` (PNG, JPEG or GIF), for administrators only, stores the image in Home Assistant's images and answers `{"id": "<image ID>"}`. Only such an ID is accepted as a guest's `picture`; an upload not saved with a guest within an hour is deleted.
+`POST /api/guest_access/picture` with a multipart field `file` (PNG, JPEG or GIF), for administrators only, stores the image in Home Assistant's images and answers `{"id": "<image ID>"}`. Only such an ID is accepted as a guest's `picture`; an upload not saved with a guest within a day is deleted. The image is not stored as it comes: it is encoded anew without its metadata, made at most 1024 pixels wide and high, and stored under a fixed file name.
 
 ### Store
 

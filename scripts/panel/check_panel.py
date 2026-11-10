@@ -683,7 +683,8 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
 
         async def renamed() -> bool:
             guest = _guest(await _snapshot(api, instance), "g_ben")
-            return guest is not None and guest["name"] == "Ben Example"
+            # The photo, not touched in the form, stays
+            return guest is not None and guest["name"] == "Ben Example" and bool(guest["picture"])
 
         await _until(renamed, "the new name in the integration")
         expect(

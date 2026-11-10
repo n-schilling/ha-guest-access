@@ -205,12 +205,13 @@ def test_settings_ranges() -> None:
 
 
 def test_guest_name_and_note_limits() -> None:
-    """A name has at most 100 characters, a note 2000, a photo is an image ID."""
+    """A note has at most 2000 characters, a photo is an image ID; a long stored name loads."""
     from custom_components.guest_access.model import Guest
 
     Guest("g", "x" * 100, ("device_tracker.t",), note="y" * 2000)
+    # The name's limit is checked on input only: what an older version stored still loads
+    Guest("g", "x" * 500, ("device_tracker.t",))
     for wrong in (
-        {"name": "x" * 101},
         {"note": "y" * 2001},
         {"picture": "/api/image/serve/x/512x512"},
     ):

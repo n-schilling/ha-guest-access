@@ -35,8 +35,12 @@ MAX_NAME_LENGTH: Final = 100
 MAX_NOTE_LENGTH: Final = 2000
 # A guest's photo is an image uploaded to Home Assistant, served in this size
 PICTURE_SIZE: Final = "512x512"
-# A photo uploaded on the page but not saved with a guest is deleted after this time
-PICTURE_UNUSED_KEEP: Final = timedelta(hours=1)
+# A photo uploaded on the page but not saved with a guest is deleted after this
+# time; long enough for a form left open, checked every PICTURE_CHECK_INTERVAL
+PICTURE_UNUSED_KEEP: Final = timedelta(hours=24)
+PICTURE_CHECK_INTERVAL: Final = timedelta(hours=1)
+# A photo is stored at most this wide and high
+PICTURE_MAX_EDGE: Final = 1024
 # Written by scripts/deploy.sh: the commit the deployed files come from
 BUILD_FILE: Final = "BUILD"
 

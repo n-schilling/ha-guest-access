@@ -327,6 +327,8 @@ if (!customElements.get("guest-access-panel")) {
     disconnectedCallback() {
       // Leaving the page drops photos uploaded in an open form but not saved
       this._dropUploads(this._form);
+      this._form = null;
+      this._confirm = null;
       if (this._unsub) {
         this._unsub.then((unsub) => unsub()).catch(() => {});
         this._unsub = null;
@@ -633,6 +635,9 @@ if (!customElements.get("guest-access-panel")) {
         log: { log_visits: guest?.log_visits ?? false },
         wasLogging: guest?.log_visits ?? false,
         media: { picture: guest?.picture ?? null, note: guest?.note ?? "" },
+        // The photo is sent only when it changed here, so a form opened before
+        // another change neither undoes that change nor sends a photo long gone
+        originalPicture: guest?.picture ?? null,
         // Images uploaded while the form is open; the ones not saved are deleted
         uploaded: [],
       };
@@ -662,7 +667,8 @@ if (!customElements.get("guest-access-panel")) {
     // them itself after an hour, this only does it at once
     _dropUploads(f) {
       if (!f?.uploaded?.length) return;
-      const kept = f.saved ? f.media.picture : null;
+      // The photo of a save that is under way or done stays, whatever the form shows now
+      const kept = f.saving || f.saved ? f.sentPicture : null;
       for (const id of f.uploaded) {
         if (id !== kept) this._call({ type: "image/delete", image_id: id }).catch(() => {});
       }
@@ -1074,6 +1080,7 @@ if (!customElements.get("guest-access-panel")) {
 
     async _saveGuest() {
       const f = this._form;
+      if (f.saving) return;
       const kind = f.approval.kind;
       const withEnd = kind === "once" || kind === "until";
       const withWindow = kind === "until" || kind === "permanent";
@@ -1098,17 +1105,23 @@ if (!customElements.get("guest-access-panel")) {
         visit_minutes: f.rooms.unlimited ? null : Number(f.rooms.visit_minutes) || 60,
         grace_minutes: Number(f.approval.grace) || 15,
         log_visits: !!f.log.log_visits,
-        picture: f.media.picture,
         note: (f.media.note || "").trim(),
       };
+      if (f.media.picture !== f.originalPicture) message.picture = f.media.picture;
       if (f.id) message.guest_id = f.id;
+      f.saving = true;
+      f.sentPicture = f.media.picture;
       try {
         await this._call(message);
         f.saved = true;
-        this._close();
       } catch {
         // Shown on the page
       }
+      f.saving = false;
+      if (!f.saved) return;
+      // Another form may be open by now: close only the one that was saved
+      if (this._form === f) this._close();
+      else this._dropUploads(f);
     }
 
     // Settings form

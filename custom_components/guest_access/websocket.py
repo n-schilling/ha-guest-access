@@ -21,6 +21,7 @@ from homeassistant.util.hass_dict import HassKey
 from .const import (
     DOMAIN,
     MAX_GRACE_MINUTES,
+    MAX_NAME_LENGTH,
     SIGNAL_CHANGED,
     WS_DELETE_GUEST,
     WS_DELETE_VISITS,
@@ -142,6 +143,9 @@ def ws_save_guest(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
     picture = msg.get("picture", old.picture if old else None)
     note = msg.get("note", old.note if old else "")
     try:
+        # Checked here, not by the guest: a stored guest always loads
+        if len(msg["name"].strip()) > MAX_NAME_LENGTH:
+            raise ValueError(f"a name has at most {MAX_NAME_LENGTH} characters")
         _check_domain(msg["trackers"], "device_tracker", "trackers")
         configured = {room.area_id for room in engine.data.settings.rooms}
         if unknown := set(msg["rooms"]) - configured:

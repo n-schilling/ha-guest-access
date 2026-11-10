@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import io
+import shutil
 from typing import Any
 
 import aiohttp
@@ -15,7 +16,9 @@ from pytest_homeassistant.typing import ClientSessionGenerator, WebSocketGenerat
 
 from homeassistant.components.image_upload import DOMAIN as IMAGE_UPLOAD_DOMAIN
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 
+from custom_components.guest_access.const import DOMAIN, STORAGE_KEY
 from custom_components.guest_access.engine import GuestEngine
 
 COUNTS = "binary_sensor.guest_anna_counts"
@@ -221,15 +224,15 @@ async def test_unsaved_upload_is_collected(
     hass_client: ClientSessionGenerator,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A photo uploaded but never saved with a guest is deleted after an hour."""
+    """A photo uploaded but never saved with a guest is deleted after a day."""
     engine: GuestEngine = entry.runtime_data
     image_id = await _upload(hass_client)
     assert image_id in engine.data.pictures
-    freezer.tick(timedelta(minutes=30))
+    freezer.tick(timedelta(hours=23))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert _images(hass) == {image_id}
-    freezer.tick(timedelta(minutes=31))
+    freezer.tick(timedelta(hours=2))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert _images(hass) == set()
@@ -310,3 +313,152 @@ async def test_picture_not_recorded(hass: HomeAssistant, entry: MockConfigEntry)
         entity = hass.data["entity_components"][entity_id.split(".")[0]].get_entity(entity_id)
         assert entity is not None
         assert "entity_picture" in entity._Entity__combined_unrecorded_attributes
+
+
+async def test_upload_is_cleaned(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    """The stored photo has no metadata, a fixed file name and a limited size."""
+    exif = Image.Exif()
+    exif[0x010F] = "Camera maker"
+    exif[0x0132] = "2026:11:09 12:00:00"
+    buffer = io.BytesIO()
+    Image.new("RGB", (3000, 1500), (10, 120, 200)).save(buffer, format="JPEG", exif=exif)
+    form = aiohttp.FormData()
+    form.add_field(
+        "file", buffer.getvalue(), filename="Anna at home.jpg", content_type="image/jpeg"
+    )
+    response = await (await hass_client()).post(UPLOAD, data=form)
+    assert response.status == 200, await response.text()
+    image_id = (await response.json())["id"]
+
+    item = hass.data[IMAGE_UPLOAD_DOMAIN].data[image_id]
+    assert item["name"] == "guest"
+    assert item["content_type"] == "image/jpeg"
+    original = await (await hass_client()).get(f"/api/image/serve/{image_id}/original")
+    assert original.status == 200
+    with Image.open(io.BytesIO(await original.read())) as stored:
+        assert stored.size == (1024, 512)
+        assert not stored.getexif()
+
+
+async def test_upload_keeps_transparency(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    """A transparent picture stays a PNG."""
+    buffer = io.BytesIO()
+    Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(buffer, format="PNG")
+    form = aiohttp.FormData()
+    form.add_field("file", buffer.getvalue(), filename="a.png", content_type="image/png")
+    response = await (await hass_client()).post(UPLOAD, data=form)
+    image_id = (await response.json())["id"]
+    assert hass.data[IMAGE_UPLOAD_DOMAIN].data[image_id]["content_type"] == "image/png"
+
+
+async def test_upload_refuses_other_content(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    """No file, another type or a broken image: refused, nothing stored."""
+    client = await hass_client()
+    assert (await client.post(UPLOAD, data={"file": "text"})).status == 400
+    for content, content_type in ((b"<svg/>", "image/svg+xml"), (b"broken", "image/png")):
+        form = aiohttp.FormData()
+        form.add_field("file", content, filename="x", content_type=content_type)
+        assert (await client.post(UPLOAD, data=form)).status == 400
+    assert _images(hass) == set()
+
+
+async def test_upload_without_the_integration(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    """With the entry unloaded there is no upload."""
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    response = await _post(hass_client, UPLOAD)
+    assert response.status == 404
+    assert _images(hass) == set()
+
+
+async def test_photo_deleted_while_unloaded(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """A photo deleted while the integration did not listen is forgotten at the next start."""
+    image_id = await _upload(hass_client)
+    assert (await _save(hass_ws_client, hass, picture=image_id))["success"]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.data[IMAGE_UPLOAD_DOMAIN].async_delete_item(image_id)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    engine: GuestEngine = entry.runtime_data
+    assert engine.data.guests["anna"].picture is None
+    assert engine.data.pictures == {}
+    assert _attribute(hass, COUNTS, "entity_picture") is None
+
+
+async def test_stored_photo_that_is_not_owned(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    stored: dict[str, Any],
+    hass_client: ClientSessionGenerator,
+) -> None:
+    """A stored photo that is not one of the integration's is dropped, the image stays."""
+    assert await async_setup_component(hass, "image_upload", {})
+    foreign = await _upload(hass_client, "/api/image/upload")
+    stored["guests"][0]["picture"] = foreign
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": stored,
+    }
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    engine: GuestEngine = entry.runtime_data
+    assert engine.data.guests["anna"].picture is None
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _images(hass) == {foreign}
+
+
+async def test_removal_survives_a_missing_file(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    hass_client: ClientSessionGenerator,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A photo whose folder is gone does not keep the store or the other photos."""
+    first = await _upload(hass_client)
+    second = await _upload(hass_client)
+    await hass.async_add_executor_job(shutil.rmtree, hass.config.path("image", first))
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert second not in _images(hass)
+    assert STORAGE_KEY not in hass_storage
+
+
+async def test_long_stored_name_still_loads(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    stored: dict[str, Any],
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """A name longer than today's limit, stored by an older version, loads; input is limited."""
+    stored["guests"][0]["name"] = "A" * 300
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": stored,
+    }
+    entry = MockConfigEntry(domain=DOMAIN)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.data.guests["anna"].name == "A" * 300
+
+    assert not (await _save(hass_ws_client, hass, name="B" * 101))["success"]
+    assert (await _save(hass_ws_client, hass, name="B" * 100))["success"]

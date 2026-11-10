@@ -40,6 +40,7 @@ from .const import (
     DOMAIN,
     EVENT_APPROVAL_CHANGED,
     EVENT_OPENED,
+    PICTURE_CHECK_INTERVAL,
     PICTURE_UNUSED_KEEP,
     SIGNAL_CHANGED,
     STORAGE_KEY,
@@ -112,10 +113,8 @@ class GuestEngine:
         """
         if (stored := await self._store.async_load()) is not None:
             self.data = AccessData.from_dict(stored)
-        # A guest's photo is always one of the integration's own
-        for guest in self.data.guests.values():
-            if guest.picture is not None:
-                self.data.pictures.setdefault(guest.picture, dt_util.utcnow())
+        if self._reconcile_pictures():
+            self._save()
         self._entity_names = await async_get_translations(
             self.hass, self.hass.config.language, "entity", {DOMAIN}
         )
@@ -164,7 +163,10 @@ class GuestEngine:
                 self.hass.bus.async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, _device_changed),
                 self.hass.data[IMAGE_UPLOAD_DOMAIN].async_add_listener(_image_changed),
                 async_track_time_interval(
-                    self.hass, self._collect_pictures, PICTURE_UNUSED_KEEP, cancel_on_shutdown=True
+                    self.hass,
+                    self._collect_pictures,
+                    PICTURE_CHECK_INTERVAL,
+                    cancel_on_shutdown=True,
                 ),
                 async_at_started(self.hass, _started),
             ]
@@ -561,6 +563,23 @@ class GuestEngine:
         return (
             image_id in self.data.pictures and image_id in self.hass.data[IMAGE_UPLOAD_DOMAIN].data
         )
+
+    def _reconcile_pictures(self) -> bool:
+        """Forget photos Home Assistant no longer has, deleted while nobody listened.
+
+        A guest keeps a photo only while it is one of the integration's own
+        and still there. Returns whether anything changed.
+        """
+        images = self.hass.data[IMAGE_UPLOAD_DOMAIN].data
+        changed = False
+        for image_id in [image_id for image_id in self.data.pictures if image_id not in images]:
+            del self.data.pictures[image_id]
+            changed = True
+        for guest in list(self.data.guests.values()):
+            if guest.picture is not None and guest.picture not in self.data.pictures:
+                self.data.guests[guest.id] = replace(guest, picture=None)
+                changed = True
+        return changed
 
     @callback
     def async_add_picture(self, image_id: str) -> None:

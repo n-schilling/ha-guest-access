@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.image_upload import DOMAIN as IMAGE_UPLOAD_DOMAIN
@@ -14,9 +15,10 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 from .engine import GuestEngine
 from .frontend import async_register_panel, async_unregister_panel
 from .issues import async_clear_issues
-from .model import AccessData
 from .picture import async_register_picture_view
 from .websocket import async_register_websocket
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR]
 
@@ -49,10 +51,18 @@ async def async_remove_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry)
     async_unregister_panel(hass)
     async_clear_issues(hass)
     store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    if (stored := await store.async_load()) is not None:
-        # The guests' photos go with them; only the integration's own uploads
+    try:
+        stored = await store.async_load() or {}
+        # The guests' photos go with them; only the integration's own uploads.
+        # Read from the raw data, so a store that no longer loads is removed too.
         images = hass.data[IMAGE_UPLOAD_DOMAIN]
-        for image_id in AccessData.from_dict(stored).pictures:
-            if image_id in images.data:
+        for image_id in stored.get("pictures", {}):
+            if image_id not in images.data:
+                continue
+            try:
                 await images.async_delete_item(image_id)
-    await store.async_remove()
+            except OSError:
+                # The file is gone already; the rest still goes
+                _LOGGER.warning("A guest photo could not be deleted")
+    finally:
+        await store.async_remove()
