@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] - unreleased
+## [0.3.0] - 2026-11-10
 
 ### Added
 
