@@ -12,20 +12,14 @@ All notable changes to this project are documented here. The format follows
 - A note per guest for administrators, on the page only.
 - `save_guest` takes `picture` and `note`; left out, they keep their value.
 - A new or changed name has at most 100 characters.
-- A device name given in Home Assistant reaches "Guests home" at once, not only with the next change.
-
-## [0.2.0] - unreleased
-
-### Added
-
-- The interface is described in the README (section Interface) and pinned by tests: entity and unique IDs, event types and data, attributes, WebSocket commands, store format.
+- The interface is described in the README (section Interface) and pinned by tests: entity and unique IDs, event types and data, attributes, WebSocket commands, the photo upload, store format.
 - Names for the data of the guests' events and of the room violation in English and German.
 - Quality scale up to Platinum, rule by rule in quality_scale.yaml and checked by the tests.
 - README sections Examples, Known limitations, Troubleshooting and Removal; a security policy and issue forms.
 
 ### Changed
 
-- Guest names in the attributes of "Guests home" and in the room violation follow a device name given in Home Assistant, as `guest_list` already did.
+- Guest names in the attributes of "Guests home" and in the room violation follow a device name given in Home Assistant, as `guest_list` already did, and at once, not only with the next change.
 - `visit_ends` in the events `arrived` and `time_up` is to the second, as the sensor and `guest_list` show it.
 
 ## [0.1.0] - 2026-11-09
