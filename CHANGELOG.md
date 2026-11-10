@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-10
+
+### Added
+
+- The page subscribes again by itself when it was opened while the integration was still loading, for example right after an update; before, it kept showing the error until the browser reloaded.
+- A screenshot of the page at phone width in dark mode; the page checks write it with the other README pictures.
+
+### Fixed
+
+- A change of the approval while the guest is away within the grace time, locking included, ends that visit where the guest left. Before, the visit stayed open and a later return logged it as one visit up to that return.
+- After a restart, a guest who does not return has left when Home Assistant started, also when the resume time was changed in the meantime.
+- The visit log grid counts from local midnight, so a start rounds to full local quarters (or whatever the grid is) in every time zone and with every grid.
+- The photo upload refuses an image of more than 40 megapixels before decoding it, decodes a JPEG already scaled down and reads the file outside the event loop; a user who is no administrator gets 403 instead of 401.
+- A setup that fails after the start leaves no engine running that would save its state over the next one.
+- A state change of a tracker, resident or door that changes nothing shown no longer updates the entities and the page.
+- `scripts/deploy.sh` replaces the folder on the host instead of unpacking over it, so removed files do not stay behind.
+
+### Changed
+
+- The store keeps, for a guest waiting to resume after a restart, when Home Assistant started (`restarted` in the runtime state); a store without it reads as before.
+
 ## [0.3.1] - 2026-11-10
 
 ### Fixed

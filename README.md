@@ -28,6 +28,10 @@ The visit log of a guest, on a 15-minute grid, with monthly totals and a CSV exp
 
 <img src="docs/screenshots/visit-log.png" alt="Visit log: running visit, totals of this and last month, single visits" width="700">
 
+The list at phone width in dark mode:
+
+<img src="docs/screenshots/phone-dark.png" alt="List of guests at phone width in dark mode" width="300">
+
 ## Design
 
 ### Overview
@@ -84,7 +88,7 @@ A guest counts while all of these hold:
 2. the time window, if any, contains the current time,
 3. one of the guest's trackers is `home`.
 
-When no tracker is home any more, the guest stops counting at once (`left`). A return within the grace time continues the same visit: its end stays, no new `arrived` is raised. A return later is a new visit with a new end. Locking the guest or an approval that is no longer valid ends the visit as well.
+When no tracker is home any more, the guest stops counting at once (`left`). A return within the grace time continues the same visit: its end stays, no new `arrived` is raised. A return later is a new visit with a new end. Locking the guest or an approval that is no longer valid ends the visit as well; so does any change of the approval while the guest is away, the visit ending when the guest left.
 
 A `once` approval is one visit: when no tracker of the guest has been home for the grace time, the approval switches to `off`. A guest who returns later needs a new approval.
 
@@ -188,7 +192,7 @@ No entity changes an approval: Home Assistant cannot limit an entity to administ
 
 ### Visit log
 
-For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a visit log, not a surveillance record. It is off by default and switched on per guest; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a grid (default 15 minutes); a return within the grace time is the same visit. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days and monthly totals (visits, hours) for 13 months by default. The log shows only on the page, with a CSV export and a delete button; the sensor "<guest> hours this month" carries the hours of the finished visits this month.
+For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a visit log, not a surveillance record. It is off by default and switched on per guest; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a grid (default 15 minutes) counted from local midnight; a return within the grace time is the same visit, while a change of the approval ends a visit whose guest is away. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days and monthly totals (visits, hours) for 13 months by default. The log shows only on the page, with a CSV export and a delete button; the sensor "<guest> hours this month" carries the hours of the finished visits this month.
 
 ### Settings
 
@@ -380,7 +384,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ### Photo upload
 
-`POST /api/guest_access/picture` with a multipart field `file` (PNG, JPEG or GIF), for administrators only, stores the image in Home Assistant's images and answers `{"id": "<image ID>"}`. Only such an ID is accepted as a guest's `picture`; an upload not saved with a guest within a day is deleted. The image is not stored as it comes: it is encoded anew without its metadata, made at most 1024 pixels wide and high, and stored under a fixed file name.
+`POST /api/guest_access/picture` with a multipart field `file` (PNG, JPEG or GIF), for administrators only, stores the image in Home Assistant's images and answers `{"id": "<image ID>"}`. Only such an ID is accepted as a guest's `picture`; an upload not saved with a guest within a day is deleted. The image is not stored as it comes: it is encoded anew without its metadata, made at most 1024 pixels wide and high, and stored under a fixed file name. An image of more than 40 megapixels is refused.
 
 ### Store
 
