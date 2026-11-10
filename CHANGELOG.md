@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-10
+
+### Fixed
+
+- The page no longer shows "commit unknown" below the version when installed from a release; the commit appears only for a test deployment with `scripts/deploy.sh`.
+
 ## [0.3.0] - 2026-11-10
 
 ### Added

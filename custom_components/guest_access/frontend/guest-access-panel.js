@@ -104,8 +104,8 @@ if (!customElements.get("guest-access-panel")) {
       logDelete: "Delete log",
       logDeleteConfirm: "Delete the visit log of {name}?",
       csvHeader: "Date;Start;End;Hours",
-      about: "Guest Access {version} · commit {commit}",
-      unknownCommit: "unknown",
+      about: "Guest Access {version}",
+      aboutCommit: "Guest Access {version} · commit {commit}",
     },
     de: {
       title: "Guest Access",
@@ -202,8 +202,8 @@ if (!customElements.get("guest-access-panel")) {
       logDelete: "Protokoll löschen",
       logDeleteConfirm: "Besuchsprotokoll von {name} löschen?",
       csvHeader: "Datum;Beginn;Ende;Stunden",
-      about: "Guest Access {version} · Commit {commit}",
-      unknownCommit: "unbekannt",
+      about: "Guest Access {version}",
+      aboutCommit: "Guest Access {version} · Commit {commit}",
     },
   };
   const KINDS = ["off", "once", "until", "permanent"];
@@ -559,9 +559,10 @@ if (!customElements.get("guest-access-panel")) {
           </div>
         </ha-card>
         <div class="about">${esc(
-          this._t("about", {
+          // A release has no commit of its own; only a test deployment writes one
+          this._t(data.about?.commit ? "aboutCommit" : "about", {
             version: data.about?.version ?? "",
-            commit: data.about?.commit ?? this._t("unknownCommit"),
+            commit: data.about?.commit ?? "",
           }),
         )}</div>`;
       content.querySelector("#add").addEventListener("click", () => this._openGuest(null));
