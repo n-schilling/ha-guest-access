@@ -10,6 +10,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.guest_access.logic import (
     GuestStatus,
     Observed,
+    end_absent_visit,
     evaluate,
     forget_log,
     free_rooms,
@@ -191,6 +192,28 @@ def test_restart_not_back() -> None:
     assert presence.resume_until is None
     # The grace time counts from the restart, not from the end of the resume window
     assert presence.away_since == T0
+
+
+def test_restart_resume_window_changed() -> None:
+    """A resume time changed after the start does not move when the guest left."""
+    data = make(guest())
+    evaluate(data, seen("a"), T0)
+    prepare_restart(data, T0)
+    assert data.presence["a"].restarted == T0
+    data.settings = replace(data.settings, resume_minutes=60)
+    assert types(evaluate(data, seen(), T0 + timedelta(minutes=11))) == ["left"]
+    assert data.presence["a"].away_since == T0
+    assert data.presence["a"].restarted is None
+
+
+def test_restart_stored_without_start() -> None:
+    """Stored without the start time: it is taken from the end of the resume window."""
+    data = make(guest())
+    evaluate(data, seen("a"), T0)
+    prepare_restart(data, T0)
+    data.presence["a"].restarted = None
+    evaluate(data, seen(), T0 + timedelta(minutes=11))
+    assert data.presence["a"].away_since == T0
 
 
 def test_room_lock() -> None:
@@ -410,6 +433,42 @@ def test_visit_log_after_restart() -> None:
     data.guests["a"] = replace(data.guests["a"], approval=Approval())
     evaluate(data, seen(), T0 + timedelta(minutes=46))
     assert [v.minutes for v in data.visits] == [45]
+
+
+def test_approval_change_while_away_ends_visit() -> None:
+    """A change of the approval within the grace time ends the visit where the guest left."""
+    data = make(guest(log_visits=True))
+    evaluate(data, seen("a"), T0)
+    evaluate(data, seen(), T0 + timedelta(minutes=60))
+    presence = data.presence["a"]
+    end_absent_visit(data, data.guests["a"], presence)
+    assert presence.arrived is None
+    assert presence.away_since is None
+    assert [(v.start, v.minutes) for v in data.visits] == [(T0, 60)]
+    # Days later the guest comes back: a visit of its own, nothing in between
+    assert types(evaluate(data, seen("a"), T0 + timedelta(days=4))) == ["arrived"]
+    assert len(data.visits) == 1
+    # Nothing to end while the guest counts
+    end_absent_visit(data, data.guests["a"], presence)
+    assert presence.counting
+
+
+def test_visit_log_grid_local_time() -> None:
+    """The grid counts from local midnight, also where the offset is not whole hours."""
+    default = dt_util.get_default_time_zone()
+    dt_util.set_default_time_zone(dt_util.get_time_zone("Asia/Kolkata"))  # type: ignore[arg-type]
+    try:
+        data = make(guest(log_visits=True))
+        data.settings = Settings(("person.sam",), ROOMS, log_grid_minutes=60)
+        # 14:20 local
+        arrival = datetime(2026, 11, 9, 8, 50, tzinfo=UTC)
+        evaluate(data, seen("a"), arrival)
+        evaluate(data, seen(), arrival + timedelta(hours=2))
+        evaluate(data, seen(), arrival + timedelta(hours=3))
+        start = dt_util.as_local(data.visits[0].start)
+        assert (start.hour, start.minute) == (14, 0)
+    finally:
+        dt_util.set_default_time_zone(default)
 
 
 def test_prune_and_forget_log() -> None:

@@ -616,3 +616,73 @@ async def test_device_name_reaches_attributes(hass: HomeAssistant, entry: MockCo
     await hass.async_block_till_done()
     assert attr(hass, GUESTS_HOME, "guests") == ["Aunt Anna"]
     assert attr(hass, GUESTS_HOME, "guest_list")[0]["name"] == "Aunt Anna"
+
+
+async def test_locked_within_grace_ends_visit(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """Locked while away within the grace time: the visit ends where the guest left."""
+    from dataclasses import replace
+
+    engine = engine_of(entry)
+    engine.async_save_guest(replace(engine.data.guests["anna"], log_visits=True))
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    arrived = engine.data.presence["anna"].arrived
+    freezer.tick(timedelta(minutes=60))
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(minutes=5))
+    engine.async_lock_guest("anna")
+    await hass.async_block_till_done()
+    presence = engine.data.presence["anna"]
+    assert presence.arrived is None
+    assert [visit.minutes for visit in engine.data.visits] == [60]
+    assert arrived is not None
+    # Approved again days later, the guest comes back: a visit of its own
+    freezer.tick(timedelta(days=4))
+    engine.async_save_guest(replace(engine.data.guests["anna"], approval=_permanent()))
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert attr(hass, ACTIVITY, "event_type") == "arrived"
+    assert [visit.minutes for visit in engine.data.visits] == [60]
+
+
+def _permanent() -> Any:
+    """A permanent approval."""
+    from custom_components.guest_access.model import Approval, ApprovalKind
+
+    return Approval(ApprovalKind.PERMANENT)
+
+
+async def test_failed_setup_stops_engine(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """A setup that fails after the engine started leaves no engine running."""
+    from unittest.mock import patch
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    with patch(
+        "custom_components.guest_access.async_register_panel", side_effect=RuntimeError("frontend")
+    ):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+    engine = engine_of(entry)
+    assert engine._unsub_wake is None
+    assert engine._unsub_states is None
+
+
+async def test_quiet_state_change(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A tracker moving between zones away from home tells nobody; arriving does."""
+    engine = engine_of(entry)
+    calls: list[None] = []
+    remove = engine.async_add_listener(lambda: calls.append(None))
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    calls.clear()
+    hass.states.async_set(TRACKER, "Work")
+    await hass.async_block_till_done()
+    assert calls == []
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert calls
+    remove()

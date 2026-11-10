@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 import io
-from typing import Any
+from typing import IO, Any
 
 from aiohttp import web
 from aiohttp.web_request import FileField
@@ -26,7 +26,7 @@ from homeassistant.components.image_upload import DOMAIN as IMAGE_UPLOAD_DOMAIN,
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util.hass_dict import HassKey
 
-from .const import DOMAIN, PICTURE_MAX_EDGE
+from .const import DOMAIN, PICTURE_MAX_EDGE, PICTURE_MAX_PIXELS
 
 PICTURE_URL = f"/api/{DOMAIN}/picture"
 DATA_VIEW: HassKey[bool] = HassKey(f"{DOMAIN}_picture_view")
@@ -34,9 +34,17 @@ DATA_VIEW: HassKey[bool] = HassKey(f"{DOMAIN}_picture_view")
 CONTENT_TYPES = ("image/gif", "image/jpeg", "image/png")
 
 
-def _clean(raw: bytes) -> tuple[bytes, str]:
-    """The picture encoded anew: upright, no metadata, at most PICTURE_MAX_EDGE wide and high."""
-    with Image.open(io.BytesIO(raw)) as image:
+def _clean(file: IO[bytes]) -> tuple[bytes, str]:
+    """The picture encoded anew: upright, no metadata, at most PICTURE_MAX_EDGE wide and high.
+
+    Read and decoded in the executor. The size is checked before decoding, so a
+    small file that unpacks to a huge image is refused before it takes memory.
+    """
+    with Image.open(io.BytesIO(file.read())) as image:
+        if image.width * image.height > PICTURE_MAX_PIXELS:
+            raise ValueError("The image is too large")
+        # A JPEG is scaled down while it is decoded
+        image.draft("RGB", (PICTURE_MAX_EDGE, PICTURE_MAX_EDGE))
         image.load()
         upright = ImageOps.exif_transpose(image)
     transparent = upright.mode in ("RGBA", "LA", "PA") or "transparency" in upright.info
@@ -60,7 +68,7 @@ class GuestPictureView(HomeAssistantView):
         """Store the image, cleaned, and answer with its ID."""
         hass: HomeAssistant = request.app[KEY_HASS]
         if not request[KEY_HASS_USER].is_admin:
-            return self.json_message("Only administrators", HTTPStatus.UNAUTHORIZED)
+            return self.json_message("Only administrators", HTTPStatus.FORBIDDEN)
         if not hass.config_entries.async_loaded_entries(DOMAIN):
             return self.json_message("Guest Access is not set up", HTTPStatus.NOT_FOUND)
         # As Home Assistant's own image upload allows
@@ -71,8 +79,14 @@ class GuestPictureView(HomeAssistantView):
                 "A photo is a JPEG, PNG or GIF image in the field file", HTTPStatus.BAD_REQUEST
             )
         try:
-            content, content_type = await hass.async_add_executor_job(_clean, uploaded.file.read())
-        except UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError:
+            content, content_type = await hass.async_add_executor_job(_clean, uploaded.file)
+        except (
+            UnidentifiedImageError,
+            OSError,
+            ValueError,
+            MemoryError,
+            Image.DecompressionBombError,
+        ):
             return self.json_message("Unable to read the image", HTTPStatus.BAD_REQUEST)
         images = hass.data[IMAGE_UPLOAD_DOMAIN]
         headers: CIMultiDictProxy[str] = CIMultiDictProxy(CIMultiDict())

@@ -207,6 +207,8 @@ if (!customElements.get("guest-access-panel")) {
     },
   };
   const KINDS = ["off", "once", "until", "permanent"];
+  // A failed subscription, the entry still loading say, is tried again after this time
+  const RETRY_MS = 5000;
   // Icon and colour per status, as the status sensor shows it
   const STATUS = {
     counting: ["mdi:account-check", "var(--success-color, #43a047)"],
@@ -325,6 +327,7 @@ if (!customElements.get("guest-access-panel")) {
     }
 
     disconnectedCallback() {
+      clearTimeout(this._retry);
       // Leaving the page drops photos uploaded in an open form but not saved
       this._dropUploads(this._form);
       this._form = null;
@@ -355,14 +358,29 @@ if (!customElements.get("guest-access-panel")) {
       this._unsub = this._hass.connection.subscribeMessage(
         (data) => {
           this._data = data;
+          if (this._subscribeFailed) {
+            // Loaded after all: the error of the failed attempt is gone
+            this._subscribeFailed = false;
+            this._error = "";
+          }
           // An open form keeps what is being typed; only the list follows the state
           if (!this._form) this._render();
         },
         { type: "guest_access/subscribe" },
       );
-      this._unsub.catch((err) => {
+      const attempt = this._unsub;
+      attempt.catch((err) => {
         this._error = err.message || String(err);
+        this._subscribeFailed = true;
         this._render();
+        // The entry may still be loading, after an update say: try again shortly,
+        // as long as the page is open and nothing else subscribed meanwhile
+        if (this._unsub !== attempt) return;
+        this._unsub = null;
+        clearTimeout(this._retry);
+        this._retry = setTimeout(() => {
+          if (this.isConnected && this._hass && !this._unsub) this._subscribe();
+        }, RETRY_MS);
       });
     }
 

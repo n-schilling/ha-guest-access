@@ -51,6 +51,7 @@ from .logic import (
     GuestStatus,
     Observed,
     counting_guests,
+    end_absent_visit,
     evaluate,
     forget_log,
     free_rooms,
@@ -92,6 +93,8 @@ class GuestEngine:
         self._unsub_wake: CALLBACK_TYPE | None = None
         self._unsub_other: list[CALLBACK_TYPE] = []
         self._issues_active = False
+        # What the last evaluation observed
+        self._observed: Observed | None = None
         # Door contact: its last real state, on or off
         self._doors: dict[str, str] = {}
         # Shown on the page: the version and the commit it was deployed from
@@ -284,7 +287,7 @@ class GuestEngine:
             # Only attributes changed, as with a tracker's position: nothing to decide
             return
         self._check_door(event)
-        self._evaluate()
+        self._evaluate(quiet=True)
         if new is None or old is None:
             # An entity appeared or went away: a repair may open or close. Other
             # state changes cannot change what is missing.
@@ -324,14 +327,23 @@ class GuestEngine:
     # Evaluation
 
     @callback
-    def _evaluate(self, _now: datetime | None = None) -> None:
+    def _evaluate(self, _now: datetime | None = None, *, quiet: bool = False) -> None:
+        """Apply the rules; quiet: tell the entities and the page only about a change.
+
+        A state change of a tracker, resident or door is quiet: most of them, a
+        tracker moving between zones say, change nothing that is shown.
+        """
         now = dt_util.utcnow()
         before = self.data.as_dict()
-        raised = evaluate(self.data, self.observe(), now)
+        observed = self.observe()
+        raised = evaluate(self.data, observed, now)
         self._schedule(now)
-        if self.data.as_dict() != before:
+        changed = self.data.as_dict() != before
+        if changed:
             self._save()
-        self._notify()
+        if changed or not quiet or observed != self._observed:
+            self._notify()
+        self._observed = observed
         for item in raised:
             self._raise(item.guest_id, item.event_type, item.data)
 
@@ -503,8 +515,9 @@ class GuestEngine:
         if old is not None and old.approval != guest.approval:
             # A new approval starts afresh, also the grace time of a once approval.
             # An expiry already raised for this visit is not raised again; a valid
-            # approval clears it in the evaluation.
-            presence.away_since = None
+            # approval clears it in the evaluation. A guest away within the grace
+            # time has left: that visit ends where it did.
+            end_absent_visit(self.data, old, presence)
         if old is not None and old.name != guest.name:
             self._rename_device(guest)
         if old is not None and old.log_visits and not guest.log_visits:

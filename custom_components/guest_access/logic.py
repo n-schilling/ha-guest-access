@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -78,12 +78,25 @@ def prepare_restart(data: AccessData, now: datetime) -> None:
         if presence.counting:
             presence.counting = False
             presence.resume_until = now + data.settings.resume_window
+            presence.restarted = now
+
+
+def _restarted(data: AccessData, presence: Presence) -> datetime:
+    """When Home Assistant started, for a guest waiting to resume."""
+    if presence.restarted is not None:
+        return presence.restarted
+    # Stored by a version that did not keep the start
+    assert presence.resume_until is not None
+    return presence.resume_until - data.settings.resume_window
 
 
 def _grid(moment: datetime, grid: timedelta) -> datetime:
-    """The nearest point on the grid."""
+    """The nearest point on the grid, counted from local midnight, so 14:00 stays 14:00."""
+    local = dt_util.as_local(moment)
+    midnight = dt_util.start_of_local_day(local)
     step = grid.total_seconds()
-    return datetime.fromtimestamp(round(moment.timestamp() / step) * step, UTC)
+    since = round((local - midnight).total_seconds() / step) * step
+    return dt_util.as_utc(midnight + timedelta(seconds=since))
 
 
 def month_key(moment: datetime) -> str:
@@ -104,6 +117,17 @@ def _finish(data: AccessData, guest: Guest, presence: Presence, end: datetime) -
         total = totals.get(month, MonthTotal())
         totals[month] = MonthTotal(total.visits + 1, total.minutes + minutes)
     presence.end_visit()
+
+
+def end_absent_visit(data: AccessData, guest: Guest, presence: Presence) -> None:
+    """End a visit whose guest is away within the grace time, where the guest left.
+
+    For a change of the approval, which starts afresh: a return afterwards is a
+    new visit, and the one before is logged as it was.
+    """
+    if not presence.counting and presence.away_since is not None and presence.arrived is not None:
+        _finish(data, guest, presence, presence.away_since)
+    presence.away_since = None
 
 
 def prune_log(data: AccessData, now: datetime) -> None:
@@ -148,6 +172,7 @@ def _leave(guest: Guest, presence: Presence, at: datetime) -> Raised:
     """The guest no longer counts; the visit is kept for a return within the grace time."""
     presence.counting = False
     presence.resume_until = None
+    presence.restarted = None
     presence.away_since = at
     return Raised(guest.id, EVENT_LEFT)
 
@@ -186,7 +211,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         # Locked while away or waiting to resume: the visit is over, the rooms lock
         left = presence.away_since
         if left is None and presence.resume_until is not None:
-            left = presence.resume_until - data.settings.resume_window
+            left = _restarted(data, presence)
         _finish(data, guest, presence, left or now)
         presence.away_since = None
     resuming = presence.resume_until is not None and now < presence.resume_until
@@ -194,6 +219,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         # Back after a restart: the visit goes on, its end stays
         presence.counting = True
         presence.resume_until = None
+        presence.restarted = None
         return _check_counting(guest, presence, now)
     in_grace = (
         presence.away_since is not None
@@ -213,7 +239,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
     if presence.resume_until is not None and not resuming:
         # Not back after a restart: the guest left in the meantime, at the
         # latest when Home Assistant started; the grace time counts from there
-        raised.append(_leave(guest, presence, presence.resume_until - data.settings.resume_window))
+        raised.append(_leave(guest, presence, _restarted(data, presence)))
     if presence.away_since is not None and now >= presence.away_since + guest.grace:
         # Away longer than the grace time: the visit is over, it ended on leaving
         _finish(data, guest, presence, presence.away_since)

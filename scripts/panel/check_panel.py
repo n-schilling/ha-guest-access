@@ -835,6 +835,8 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             expect(overflow <= 0, f"{scheme}: page scrolls sideways by {overflow} px")
+            if shots is not None and scheme == "dark":
+                await phone.screenshot(path=str(shots / "phone-dark.png"))
             await phone.locator(f"{PANEL} [data-edit='g_anna']").click()
             await phone.get_by_text("Visit log", exact=True).wait_for()
             overflow = await phone.evaluate(
@@ -855,6 +857,35 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
 
     await checks.run(
         "phone width and dark mode: no sideways scrolling, dark background", phone_and_dark
+    )
+
+    async def recovers_once_loaded() -> None:
+        async def entry(disabled_by: str | None) -> None:
+            reply = await api.ws(
+                instance.token,
+                {
+                    "type": "config_entries/disable",
+                    "entry_id": instance.entry_id,
+                    "disabled_by": disabled_by,
+                },
+            )
+            expect(reply["success"], str(reply))
+
+        await entry("user")
+        try:
+            await page.goto(f"{instance.base}/guest-access")
+            await page.locator(f"{PANEL} ha-alert[alert-type='error']").wait_for(timeout=30000)
+        finally:
+            await entry(None)
+        # The page subscribes again by itself, without a reload
+        await page.locator(f"{PANEL} [data-edit]").first.wait_for(timeout=30000)
+        expect(
+            await page.locator(f"{PANEL} ha-alert[alert-type='error']").count() == 0,
+            "the error stays after loading",
+        )
+
+    await checks.run(
+        "the page recovers by itself once the integration is loaded again", recovers_once_loaded
     )
 
     async def no_page_for_users() -> None:

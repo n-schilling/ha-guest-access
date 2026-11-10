@@ -30,10 +30,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry) 
     engine = GuestEngine(hass, entry)
     await engine.async_start()
     entry.runtime_data = engine
-    async_register_websocket(hass)
-    async_register_picture_view(hass)
-    await async_register_panel(hass)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        async_register_websocket(hass)
+        async_register_picture_view(hass)
+        await async_register_panel(hass)
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except BaseException:
+        # A failed setup is never unloaded: the engine would go on waking and
+        # saving its state over the one of the next setup
+        await engine.async_stop()
+        raise
     engine.async_begin()
     return True
 

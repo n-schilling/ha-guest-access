@@ -202,7 +202,7 @@ async def test_upload_for_administrators_only(
 ) -> None:
     """A user without administrator rights cannot upload a guest photo."""
     response = await _post(hass_client, UPLOAD, hass_read_only_access_token)
-    assert response.status == 401
+    assert response.status == 403
     assert _images(hass) == set()
 
 
@@ -340,6 +340,20 @@ async def test_upload_is_cleaned(
     with Image.open(io.BytesIO(await original.read())) as stored:
         assert stored.size == (1024, 512)
         assert not stored.getexif()
+
+
+async def test_upload_refuses_huge_image(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    """A small file that unpacks to a huge image is refused before it is decoded."""
+    buffer = io.BytesIO()
+    # 48 megapixels, a few kilobytes as a file
+    Image.new("1", (8000, 6000)).save(buffer, format="PNG")
+    form = aiohttp.FormData()
+    form.add_field("file", buffer.getvalue(), filename="big.png", content_type="image/png")
+    response = await (await hass_client()).post(UPLOAD, data=form)
+    assert response.status == 400
+    assert _images(hass) == set()
 
 
 async def test_upload_keeps_transparency(

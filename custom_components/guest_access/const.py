@@ -41,6 +41,8 @@ PICTURE_UNUSED_KEEP: Final = timedelta(hours=24)
 PICTURE_CHECK_INTERVAL: Final = timedelta(hours=1)
 # A photo is stored at most this wide and high
 PICTURE_MAX_EDGE: Final = 1024
+# Larger images are refused before they are decoded; any phone photo is smaller
+PICTURE_MAX_PIXELS: Final = 40_000_000
 # Written by scripts/deploy.sh: the commit the deployed files come from
 BUILD_FILE: Final = "BUILD"
 

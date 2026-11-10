@@ -264,6 +264,8 @@ STORED_V1: dict[str, Any] = {
             "visit_ends": None,
             "away_since": None,
             "resume_until": None,
+            # Added in 0.4.0: when Home Assistant started, while waiting to resume
+            "restarted": None,
             "time_up": False,
             "approval_expired": False,
         }
@@ -287,6 +289,16 @@ def test_store_format() -> None:
     assert STORAGE_KEY == "guest_access"
     assert STORAGE_VERSION == 1
     assert AccessData.from_dict(STORED_V1).as_dict() == STORED_V1
+
+
+def test_store_before_restart_time() -> None:
+    """A store written before 0.4.0, without the start time, still reads."""
+    presence = {
+        guest_id: {key: value for key, value in fields.items() if key != "restarted"}
+        for guest_id, fields in STORED_V1["presence"].items()
+    }
+    data = AccessData.from_dict({**STORED_V1, "presence": presence})
+    assert data.presence["0123456789abcdef0123456789abcdef"].restarted is None
 
 
 async def test_photo_interface(

@@ -23,5 +23,13 @@ COPYFILE_DISABLE=1 tar -C custom_components --exclude __pycache__ --exclude BUIL
 printf '%s\n' "$commit" > "$staging/guest_access/BUILD"
 
 echo "Deploying $commit to $host"
+# Unpacked beside the old folder and then swapped, so files removed or renamed
+# since the last deployment do not stay behind
 COPYFILE_DISABLE=1 tar -C "$staging" -cf - guest_access |
-  ssh "$@" "$host" "tar -C $target -xf - && find $target/guest_access -name '._*' -delete && docker exec hassio_cli ha core restart"
+  ssh "$@" "$host" "set -e; rm -rf $target/.guest_access.new; mkdir $target/.guest_access.new
+    tar -C $target/.guest_access.new -xf -
+    find $target/.guest_access.new -name '._*' -delete
+    rm -rf $target/guest_access
+    mv $target/.guest_access.new/guest_access $target/guest_access
+    rmdir $target/.guest_access.new
+    docker exec hassio_cli ha core restart"

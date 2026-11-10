@@ -364,6 +364,8 @@ class Presence:
     # Raised already for this visit
     time_up: bool = False
     approval_expired: bool = False
+    # After a restart: when Home Assistant started, the latest the guest left
+    restarted: datetime | None = None
 
     def end_visit(self) -> None:
         """Forget the visit."""
@@ -371,6 +373,7 @@ class Presence:
         self.arrived = None
         self.visit_ends = None
         self.resume_until = None
+        self.restarted = None
         self.time_up = False
         self.approval_expired = False
 
@@ -382,6 +385,7 @@ class Presence:
             "visit_ends": _iso_or_none(self.visit_ends),
             "away_since": _iso_or_none(self.away_since),
             "resume_until": _iso_or_none(self.resume_until),
+            "restarted": _iso_or_none(self.restarted),
             "time_up": self.time_up,
             "approval_expired": self.approval_expired,
         }
@@ -395,6 +399,7 @@ class Presence:
             visit_ends=_time_or_none(data.get("visit_ends")),
             away_since=_time_or_none(data.get("away_since")),
             resume_until=_time_or_none(data.get("resume_until")),
+            restarted=_time_or_none(data.get("restarted")),
             time_up=bool(data.get("time_up", False)),
             approval_expired=bool(data.get("approval_expired", False)),
         )
