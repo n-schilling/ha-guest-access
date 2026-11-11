@@ -196,7 +196,7 @@ For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a 
 
 ### Settings
 
-On the page, under residents and rooms:
+On the page, tab "Rooms", "Edit":
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -239,7 +239,9 @@ Once Home Assistant has started, Guest Access opens a repair issue for every tra
 
 ### Page
 
-A sidebar page for administrators only, in English and German: the list of guests with photo and state, a "lock now" button that sets the approval to `off`, a form per guest (trackers, photo and note, approval and time windows, rooms and time, visit log), the residents, rooms and timings, and at the bottom the version and, when deployed with `scripts/deploy.sh`, the commit. Every page and subpage has the same header as Nico's other apps and integrations: when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a settings button to Home Assistant's page of the integration. Non-administrators get no page.
+A sidebar page for administrators only, in English and German, with two tabs: "Guests" lists the guests with photo and state, a "lock now" button that sets the approval to `off`, and "Add guest"; "Rooms" shows the residents, the lockable rooms and whether the room lock is on, with "Edit" for residents, rooms and timings. A guest opens as a subpage with a back arrow: trackers, photo and note, approval and time windows, rooms and time, visit log. The tab is in the URL (`/guest-access/guests`, `/guest-access/rooms`), so a reload and the browser's back button keep it. At the bottom: the version and, when deployed with `scripts/deploy.sh`, the commit.
+
+The header is one row, as on Nico's other apps and integrations: the integration's icon, its name and the tabs, then when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a settings button to Home Assistant's page of the integration. At phone width the tabs move to the bottom of the screen. A subpage shows the back arrow and its title in place of icon, name and tabs. Non-administrators get no page.
 
 ### State
 
@@ -412,7 +414,7 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, the page checks and hassfest in Docker.
 
-The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (list, form, visit log, lock, rename, photo and note, errors, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
+The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (header with icon and tabs, the tab in the URL, list, form, visit log, lock, rename, photo and note, errors, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
 
 ```bash
 uv venv --python 3.14 .venv-panel && uv pip install --python .venv-panel/bin/python -r requirements_panel.txt

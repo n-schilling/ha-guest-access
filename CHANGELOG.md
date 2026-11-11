@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-11
+
+### Changed
+
+- The page has two tabs in the header row, next to the integration's icon and name, styled like Network Plus: "Guests" with the guest list and "Add guest", and "Rooms" with the residents, the lockable rooms, the room lock and "Edit". The tab is in the URL (`/guest-access/guests`, `/guest-access/rooms`), so a reload and the browser's back button keep it. At phone width the tabs sit at the bottom of the screen with icons. Guests and the edit of residents and rooms stay subpages with the back arrow; closing one returns to its tab.
+- The header shows the integration's own icon (its `brand/icon.png`, served by Home Assistant's brands view) left of the name; on a subpage the back arrow takes its place.
+
+### Fixed
+
+- The page check could hang in CI until the job was cancelled, without saying where. Every wait now has a limit: each check (150 s, with the lines it waited at), each WebSocket reply (30 s; a refused subscription fails at once instead of waiting for an event), closing a browser context or the browser (30 s), stopping Home Assistant, and all checks together (7 min), so a hang is a failed check named in the log and Home Assistant is still stopped.
+
+### Added
+
+- The page check tests the new header: icon loaded (natural width above 0, 24 px, from the brands view), name, tabs in the row of the name on desktop width and at the bottom at phone width, the three controls on the right; the tab kept in the URL across a reload, back to Guests with the browser's back button, the edit of rooms returning to the Rooms tab, and the bottom tabs at phone width. Screenshots refreshed.
+
 ## [0.5.0] - 2026-11-11
 
 ### Added

@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -42,6 +43,13 @@ from playwright.async_api import Browser, Page, async_playwright
 ROOT = Path(__file__).resolve().parents[2]
 INTEGRATION = ROOT / "custom_components" / "guest_access"
 TIME_ZONE = ZoneInfo("Europe/Berlin")
+# Every wait has a limit, so a hang shows as a failed check with the line it hung
+# on instead of a CI job killed without a word: one check, one WebSocket reply,
+# closing a browser context, and all checks together (CI stops the step after 10 min)
+CHECK_SECONDS = 150
+WS_SECONDS = 30
+CLOSE_SECONDS = 30
+ALL_SECONDS = 420
 # Accounts of the throwaway instance; it listens on 127.0.0.1 only and is deleted afterwards
 ADMIN = ("admin", "panel-check-admin")
 USER = ("user", "panel-check-user")
@@ -297,7 +305,10 @@ class Api:
 
     async def ws(self, token: str, message: dict[str, Any]) -> dict[str, Any]:
         """One WebSocket command; the whole result message, success or not."""
-        async with self.session.ws_connect(self.base + "/api/websocket") as ws:
+        async with (
+            asyncio.timeout(WS_SECONDS),
+            self.session.ws_connect(self.base + "/api/websocket") as ws,
+        ):
             await ws.receive_json()
             await ws.send_json({"type": "auth", "access_token": token})
             if (await ws.receive_json())["type"] != "auth_ok":
@@ -495,18 +506,21 @@ class Instance:
             return
         try:
             if self.token:
-                async with session.post(
-                    self.base + "/api/services/homeassistant/stop",
-                    headers={"Authorization": f"Bearer {self.token}"},
+                async with (
+                    asyncio.timeout(WS_SECONDS),
+                    session.post(
+                        self.base + "/api/services/homeassistant/stop",
+                        headers={"Authorization": f"Bearer {self.token}"},
+                    ),
                 ):
                     pass
-        except aiohttp.ClientError:
+        except aiohttp.ClientError, TimeoutError:
             pass
         try:
-            self.process.wait(timeout=60)
+            await asyncio.to_thread(self.process.wait, 60)
         except subprocess.TimeoutExpired:
-            self.process.terminate()
-            self.process.wait(timeout=30)
+            self.process.kill()
+            await asyncio.to_thread(self.process.wait, 30)
 
 
 @dataclass
@@ -519,9 +533,15 @@ class Checks:
 
     async def run(self, name: str, check: Callable[[], Awaitable[None]]) -> None:
         try:
-            if self.before is not None:
-                await self.before()
-            await check()
+            async with asyncio.timeout(CHECK_SECONDS):
+                if self.before is not None:
+                    await self.before()
+                await check()
+        except TimeoutError as err:
+            # Where it waited: the innermost lines of the check
+            where = "".join(traceback.format_tb(err.__traceback__)[-3:])
+            self.failed.append(f"{name}: no end after {CHECK_SECONDS} s")
+            print(f"FAIL {name}: no end after {CHECK_SECONDS} s, waiting at\n{where}")
         except Exception as err:
             self.failed.append(f"{name}: {err!r}")
             print(f"FAIL {name}: {err!r}")
@@ -539,6 +559,8 @@ def expect(condition: bool, message: str) -> None:
 PANEL = "guest-access-panel"
 STAMP = re.compile(r"^As of \d\d:\d\d:\d\d$")
 INTEGRATION_PAGE = "/config/integrations/integration/guest_access"
+BRAND_ICON = "/api/brands/integration/guest_access/icon.png"
+TAB_PATH = re.compile(r"/guest-access(/(guests|rooms))?$")
 # What each page sent over its WebSocket, for the refresh check
 SENT: dict[Page, list[dict[str, Any]]] = {}
 
@@ -585,6 +607,12 @@ async def _list(page: Page) -> None:
     await page.locator("#ha-launch-screen").wait_for(state="detached")
 
 
+async def _rooms_tab(page: Page) -> None:
+    """The Rooms tab is there."""
+    await page.locator(f"{PANEL} #settings").wait_for(timeout=90000)
+    await page.locator("#ha-launch-screen").wait_for(state="detached")
+
+
 async def _headlines(page: Page) -> list[str]:
     return [
         text.strip() for text in await page.locator(f"{PANEL} .item .headline").all_inner_texts()
@@ -593,7 +621,10 @@ async def _headlines(page: Page) -> list[str]:
 
 async def _snapshot(api: Api, instance: Instance) -> dict[str, Any]:
     """What the page gets: guests, settings and state."""
-    async with api.session.ws_connect(api.base + "/api/websocket") as ws:
+    async with (
+        asyncio.timeout(WS_SECONDS),
+        api.session.ws_connect(api.base + "/api/websocket") as ws,
+    ):
         await ws.receive_json()
         await ws.send_json({"type": "auth", "access_token": instance.token})
         await ws.receive_json()
@@ -602,18 +633,71 @@ async def _snapshot(api: Api, instance: Instance) -> dict[str, Any]:
             reply = await ws.receive_json()
             if reply.get("type") == "event":
                 return dict(reply["event"])
+            # A refused subscription sends no event: fail instead of waiting for one
+            if reply.get("type") == "result" and not reply.get("success"):
+                raise RuntimeError(f"subscription refused: {reply}")
 
 
 def _guest(snapshot: dict[str, Any], guest_id: str) -> dict[str, Any] | None:
     return next((guest for guest in snapshot["guests"] if guest["id"] == guest_id), None)
 
 
-async def _header(page: Page) -> None:
-    """Stamp, refresh and settings in the top app bar, in this order, and nothing between."""
-    actions = await page.locator(f"{PANEL} [slot=actionItems]").evaluate_all(
-        "els => els.map(el => el.id)"
-    )
+async def _header(page: Page, *, subpage: bool = False, phone: bool = False) -> None:
+    """One header row: icon, name and tabs (a subpage: back arrow and title), then stamp,
+    refresh and settings in this order, and nothing between."""
+    actions = await page.locator(f"{PANEL} #tools > *").evaluate_all("els => els.map(el => el.id)")
     expect(actions == ["stamp", "refresh", "integration"], f"header actions are {actions}")
+    if subpage:
+        expect(await page.locator(f"{PANEL} #back").is_visible(), "no back arrow on a subpage")
+        for part in ("brand", "tabs"):
+            expect(await page.locator(f"{PANEL} #{part}").count() == 0, f"{part} on a subpage")
+    else:
+        title = (await page.locator(f"{PANEL} #title").inner_text()).strip()
+        expect(title == "Guest Access", f"title is {title!r}")
+        # The integration's own icon, loaded through Home Assistant's brands view
+        brand = page.locator(f"{PANEL} #brand")
+        await brand.wait_for()
+        await _until(
+            lambda: brand.evaluate("img => img.complete && img.naturalWidth > 0"),
+            "the icon to load",
+        )
+        src = await brand.get_attribute("src") or ""
+        expect(src.startswith(f"{BRAND_ICON}?token="), f"icon from {src!r}")
+        box = await brand.bounding_box()
+        expect(box is not None and round(box["width"]) == 24, f"icon is {box}")
+        tabs = await page.locator(f"{PANEL} #tabs .tab").all_inner_texts()
+        expect([text.strip() for text in tabs] == ["Guests", "Rooms"], f"tabs are {tabs}")
+        # The tabs sit in the header row next to the name, or at the bottom at phone width
+        rows = await page.locator(PANEL).evaluate(
+            """el => {
+              const root = el.shadowRoot;
+              const middle = (part) => {
+                const r = root.getElementById(part).getBoundingClientRect();
+                return { top: r.top, middle: r.top + r.height / 2, bottom: r.bottom };
+              };
+              const bar = root.querySelector(".toolbar").getBoundingClientRect();
+              return { bar: { top: bar.top, bottom: bar.bottom }, title: middle("title"),
+                tabs: middle("tabs"), brand: middle("brand"), tools: middle("tools"),
+                bottom: root.getElementById("tabs").classList.contains("bottom-tabs") };
+            }"""
+        )
+        if phone:
+            expect(rows["bottom"], "the tabs are not at the bottom at phone width")
+            expect(rows["tabs"]["top"] > rows["bar"]["bottom"] + 200, f"tabs at {rows}")
+        else:
+            expect(not rows["bottom"], "bottom tabs on desktop width")
+            expect(
+                abs(rows["tabs"]["top"] - rows["bar"]["top"]) < 1
+                and rows["tabs"]["bottom"] <= rows["bar"]["bottom"],
+                f"the tabs are not in the header row: {rows}",
+            )
+        for part in ("brand", "tabs", "tools"):
+            if phone and part == "tabs":
+                continue
+            expect(
+                abs(rows[part]["middle"] - rows["title"]["middle"]) < 2,
+                f"{part} not in the row of the name: {rows}",
+            )
     stamp = (await page.locator(f"{PANEL} #stamp").inner_text()).strip()
     expect(bool(STAMP.match(stamp)), f"stamp is {stamp!r}")
     for button, icon, label in (
@@ -646,7 +730,7 @@ async def _refresh(page: Page) -> None:
     types = [message.get("type") for message in sent[count:]]
     expect("unsubscribe_events" in types, f"old subscription not ended: {types}")
     expect("guest_access/subscribe" in types, f"data not fetched again: {types}")
-    expect(page.url.endswith("/guest-access"), f"refresh left the page: {page.url}")
+    expect(bool(TAB_PATH.search(page.url)), f"refresh left the page: {page.url}")
 
 
 async def _settings_button(page: Page, instance: Instance) -> None:
@@ -667,15 +751,27 @@ async def _until(check: Callable[[], Awaitable[bool]], what: str, seconds: float
     raise AssertionError(f"timed out waiting for {what}")
 
 
-async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path | None) -> Checks:
+async def _close(page: Page) -> None:
+    """Close the page's browser context; one that does not close is left to the browser."""
+    try:
+        async with asyncio.timeout(CLOSE_SECONDS):
+            await page.context.close()
+    except TimeoutError:
+        print(f"note: a browser context did not close within {CLOSE_SECONDS} s")
+
+
+async def check_page(
+    browser: Browser, instance: Instance, api: Api, shots: Path | None, checks: Checks
+) -> None:
+    """Run the checks into `checks`, so the ones done count also when time runs out."""
     page = await _open(browser, instance, ADMIN)
 
     async def from_list() -> None:
-        """Every check starts on the list, whatever the one before left behind."""
+        """Every check starts on the Guests tab, whatever the one before left behind."""
         await page.goto(f"{instance.base}/guest-access")
         await _list(page)
 
-    checks = Checks(before=from_list)
+    checks.before = from_list
 
     async def list_shows_guests() -> None:
         await _list(page)
@@ -684,8 +780,7 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
         expect(headlines[0].startswith("Anna · Counts as home"), headlines[0])
         expect(any(line.startswith("Chris · No approval") for line in headlines), str(headlines))
         text = await page.locator(f"{PANEL} #content").inner_text()
-        expect("Sam, Robin" in text, "residents missing")
-        expect("Office, Bedroom, Kids room" in text, "lockable rooms missing")
+        expect("Sam, Robin" not in text, "residents on the Guests tab")
         about = await page.locator(f"{PANEL} .about").inner_text()
         expect(about.startswith("Guest Access ") and "commit" in about.lower(), about)
         expect(
@@ -698,6 +793,38 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
         text = await clean.inner_text()
         expect(text.endswith(" (outside the time windows)"), text)
 
+    async def tabs_in_the_url() -> None:
+        async def active() -> str:
+            return (await page.locator(f"{PANEL} #tabs .tab.active").inner_text()).strip()
+
+        expect(await active() == "Guests", "Guests is not the first tab")
+        await page.locator(f"{PANEL} #tabs .tab", has_text="Rooms").click()
+        await _rooms_tab(page)
+        expect(page.url.endswith("/guest-access/rooms"), f"Rooms tab at {page.url}")
+        expect(await active() == "Rooms", "Rooms is not marked")
+        text = await page.locator(f"{PANEL} #content").inner_text()
+        expect("Sam, Robin" in text, "residents missing")
+        expect("Office, Bedroom, Kids room" in text, "lockable rooms missing")
+        expect("Room lock" in text, "room lock text missing")
+        expect(await page.locator(f"{PANEL} [data-edit]").count() == 0, "guests on Rooms")
+        expect(await page.locator(f"{PANEL} .about").count() == 1, "version missing on Rooms")
+        # A reload stays on the tab, and the back button of the browser goes back
+        await page.reload()
+        await _rooms_tab(page)
+        expect(await active() == "Rooms", "the reload left the Rooms tab")
+        await page.go_back()
+        await _list(page)
+        expect(await active() == "Guests", "back did not return to Guests")
+        # The edit of residents and rooms returns to the Rooms tab
+        await page.goto(f"{instance.base}/guest-access/rooms")
+        await _rooms_tab(page)
+        await page.locator(f"{PANEL} #settings").click()
+        await page.get_by_text("Lockable rooms", exact=True).first.wait_for()
+        await page.locator(f"{PANEL} #back").click()
+        await _rooms_tab(page)
+        expect(page.url.endswith("/guest-access/rooms"), f"back from the form to {page.url}")
+        await _header(page)
+
     async def header_on_list() -> None:
         await _header(page)
         await _refresh(page)
@@ -706,17 +833,21 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
 
     async def header_on_subpages() -> None:
         # A guest, a new guest, residents and rooms: the three after back arrow and title
-        for open_subpage, ready in (
-            (page.locator(f"{PANEL} [data-edit='g_anna']"), "Visit log"),
-            (page.get_by_role("button", name="Add guest"), "Approval"),
-            (page.locator(f"{PANEL} #settings"), "Lockable rooms"),
+        for tab, open_subpage, ready in (
+            ("guests", page.locator(f"{PANEL} [data-edit='g_anna']"), "Visit log"),
+            ("guests", page.get_by_role("button", name="Add guest"), "Approval"),
+            ("rooms", page.locator(f"{PANEL} #settings"), "Lockable rooms"),
         ):
+            await page.goto(f"{instance.base}/guest-access/{tab}")
+            await (_list(page) if tab == "guests" else _rooms_tab(page))
             await open_subpage.click()
             await page.get_by_text(ready, exact=True).first.wait_for()
             await page.locator(f"{PANEL} #back").wait_for()
-            await _header(page)
+            await _header(page, subpage=True)
             await page.locator(f"{PANEL} #back").click()
-            await _list(page)
+            await (_list(page) if tab == "guests" else _rooms_tab(page))
+        await page.goto(f"{instance.base}/guest-access")
+        await _list(page)
         # A refresh on a form redraws it and keeps what was typed
         await page.locator(f"{PANEL} [data-edit='g_ben']").click()
         name = page.get_by_role("textbox", name="Name")
@@ -725,12 +856,18 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
         expect(await name.input_value() == "Ben typed", "the refresh dropped the typed name")
         await page.locator(f"{PANEL} #back").click()
         await _list(page)
+        await page.goto(f"{instance.base}/guest-access/rooms")
+        await _rooms_tab(page)
         await page.locator(f"{PANEL} #settings").click()
         await page.get_by_text("Lockable rooms", exact=True).first.wait_for()
         await _settings_button(page, instance)
 
-    await checks.run("list shows guests, residents, rooms and version", list_shows_guests)
-    await checks.run("header: stamp, refresh and settings on the list", header_on_list)
+    await checks.run("Guests tab shows the guests and the version", list_shows_guests)
+    await checks.run(
+        "tabs Guests and Rooms in the header row, kept in the URL, Rooms with residents",
+        tabs_in_the_url,
+    )
+    await checks.run("header: icon, name, tabs, stamp, refresh and settings", header_on_list)
     await checks.run("header: stamp, refresh and settings on every subpage", header_on_subpages)
     await checks.run("a guest outside its windows is not shown as expired", window_is_not_expiry)
     if shots is not None:
@@ -934,6 +1071,15 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             expect(overflow <= 0, f"{scheme}: page scrolls sideways by {overflow} px")
+            await _header(phone, phone=True)
+            # The tabs at the bottom work as at desktop width
+            await phone.locator(f"{PANEL} #tabs .tab", has_text="Rooms").click()
+            await _rooms_tab(phone)
+            expect(phone.url.endswith("/guest-access/rooms"), f"{scheme}: Rooms at {phone.url}")
+            await phone.locator(f"{PANEL} #tabs .tab", has_text="Guests").click()
+            await _list(phone)
+            # No hover highlight in the picture
+            await phone.mouse.move(0, 0)
             expect(
                 not await phone.locator(f"{PANEL} #stamp").is_visible(),
                 f"{scheme}: the stamp shows on phone width",
@@ -962,7 +1108,7 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
             if instance.directory.exists():
                 await phone.screenshot(path=str(instance.directory / f"phone-{scheme}.png"))
             SENT.pop(phone, None)
-            await phone.context.close()
+            await _close(phone)
 
     await checks.run(
         "phone width and dark mode: no sideways scrolling, dark background", phone_and_dark
@@ -1009,8 +1155,7 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
     await checks.run(
         "users without administrator rights get neither page nor commands", no_page_for_users
     )
-    await page.context.close()
-    return checks
+    await _close(page)
 
 
 async def main() -> int:
@@ -1040,9 +1185,17 @@ async def main() -> int:
                     headless=not args.headed,
                 )
                 try:
-                    checks = await check_page(browser, instance, api, args.screenshots)
+                    async with asyncio.timeout(ALL_SECONDS):
+                        await check_page(browser, instance, api, args.screenshots, checks)
+                except TimeoutError:
+                    checks.failed.append(f"all checks: no end after {ALL_SECONDS} s")
+                    print(f"FAIL all checks: no end after {ALL_SECONDS} s")
                 finally:
-                    await browser.close()
+                    try:
+                        async with asyncio.timeout(CLOSE_SECONDS):
+                            await browser.close()
+                    except TimeoutError:
+                        print(f"note: the browser did not close within {CLOSE_SECONDS} s")
         except Exception as err:
             checks.failed.append(f"setup: {err!r}")
             print(f"FAIL setup: {err!r}")

@@ -3,14 +3,19 @@
 // change goes to the integration over the WebSocket API; the list follows the
 // integration's state live.
 //
-// The page is built from Home Assistant's own elements (top app bar, cards,
-// buttons, alerts and ha-form with selectors), so it looks and behaves like the
-// rest of the UI. An edit opens as a subpage with a back arrow.
+// The page is built from Home Assistant's own elements (cards, buttons, alerts
+// and ha-form with selectors), so it looks and behaves like the rest of the UI.
+// The header is one row, as on every page of Nico's apps and integrations: the
+// integration's icon and name with the two tabs (Guests, Rooms; the tab is in
+// the URL), then stamp, refresh and settings. At phone width the tabs sit at
+// the bottom, as in Network Plus. An edit opens as a subpage with a back arrow.
 
 if (!customElements.get("guest-access-panel")) {
   const TEXTS = {
     en: {
       title: "Guest Access",
+      tabGuests: "Guests",
+      tabRooms: "Rooms",
       guests: "Guests",
       addGuest: "Add guest",
       noGuests: "No guests yet. A guest counts as home only with an approval.",
@@ -112,6 +117,8 @@ if (!customElements.get("guest-access-panel")) {
     },
     de: {
       title: "Guest Access",
+      tabGuests: "Gäste",
+      tabRooms: "Räume",
       guests: "Gäste",
       addGuest: "Gast hinzufügen",
       noGuests: "Noch keine Gäste. Ein Gast zählt nur mit Freigabe als daheim.",
@@ -215,6 +222,16 @@ if (!customElements.get("guest-access-panel")) {
   const KINDS = ["off", "once", "until", "permanent"];
   // Home Assistant's page of the integration, behind the settings button
   const INTEGRATION_PAGE = "/config/integrations/integration/guest_access";
+  // The page in the sidebar; a tab adds its name to the path
+  const PANEL_PATH = "/guest-access";
+  // Tab, icon at phone width, text
+  const TABS = [
+    ["guests", "mdi:account-multiple", "tabGuests"],
+    ["rooms", "mdi:door-closed-lock", "tabRooms"],
+  ];
+  // The integration's own icon (brand/icon.png), as Home Assistant serves it to the
+  // signed-in browser: with the brands token, which Home Assistant renews every 30 min
+  const BRAND_ICON = "/api/brands/integration/guest_access/icon.png";
   // A failed subscription, the entry still loading say, is tried again after this time
   const RETRY_MS = 5000;
   // Icon and colour per status, as the status sensor shows it
@@ -248,14 +265,42 @@ if (!customElements.get("guest-access-panel")) {
   const STYLE = `
     :host { display: block; height: 100vh; height: 100dvh; background: var(--primary-background-color);
       color: var(--primary-text-color); }
-    /* Like the settings and other panels: the header in the sidebar's colour, with a line */
-    ha-top-app-bar-fixed { height: 100%;
-      --app-header-background-color: var(--sidebar-background-color, var(--card-background-color));
-      --app-header-border-bottom: 1px solid var(--divider-color); }
-    /* The header's actions, as on every page of Nico's apps and integrations: stamp,
-       refresh, settings */
+    * { box-sizing: border-box; }
+    .app { display: flex; flex-direction: column; height: 100%; }
+    /* One header row like the settings and other panels, in the sidebar's colour with a
+       line: menu or back arrow, icon, name, tabs; stamp, refresh and settings at the end */
+    .toolbar { display: flex; align-items: center; flex: none; height: var(--header-height, 56px);
+      padding: 0 12px; background: var(--sidebar-background-color, var(--card-background-color));
+      color: var(--sidebar-text-color, var(--primary-text-color)); border-bottom: 1px solid var(--divider-color); }
+    .toolbar > ha-menu-button, .toolbar > #back { color: var(--sidebar-icon-color, var(--secondary-text-color));
+      flex: none; }
+    .brand { width: 24px; height: 24px; flex: none; margin-inline-start: 12px; }
+    .main-title { font-size: 20px; font-weight: 400; line-height: 32px; margin-inline-start: 12px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .tabs { display: flex; height: 100%; margin-inline-start: 24px; overflow-x: auto; scrollbar-width: none;
+      flex: none; }
+    .tab { display: flex; align-items: center; justify-content: center; height: 100%; padding: 0 20px;
+      position: relative; color: var(--sidebar-text-color, var(--primary-text-color)); text-decoration: none;
+      font-weight: 500; white-space: nowrap; opacity: 0.8; }
+    .tab:hover { background: color-mix(in srgb, var(--primary-text-color) 5%, transparent); }
+    .tab.active { color: var(--primary-color); opacity: 1; }
+    .tabs .tab.active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+      background: var(--primary-color); }
+    .tools { display: flex; align-items: center; gap: 4px; margin-inline-start: auto; padding-inline-start: 8px;
+      flex: none; }
+    .tools ha-icon-button { color: var(--sidebar-icon-color, var(--secondary-text-color)); }
     .stamp { color: var(--secondary-text-color); font-size: var(--ha-font-size-m, 14px);
-      white-space: nowrap; align-self: center; margin-inline-end: 4px; }
+      white-space: nowrap; font-variant-numeric: tabular-nums; margin-inline-end: 4px; }
+    /* At phone width the tabs are at the bottom, with icons, as in Network Plus */
+    .bottom-tabs { display: flex; flex: none; justify-content: space-around;
+      background: var(--sidebar-background-color, var(--card-background-color));
+      border-top: 1px solid var(--divider-color); padding-bottom: env(safe-area-inset-bottom); }
+    .bottom-tabs .tab { flex: 1 1 0; flex-direction: column; gap: 2px; height: 56px; padding: 6px 2px 4px;
+      font-size: 11px; min-width: 0; }
+    .bottom-tabs .tab span { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .bottom-tabs .tab ha-icon { padding: 2px 12px; border-radius: 14px; box-sizing: content-box; }
+    .bottom-tabs .tab.active ha-icon { background: color-mix(in srgb, var(--primary-color) 15%, transparent); }
+    .scroller { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
     #refresh.loading ha-icon { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .about { text-align: center; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px);
@@ -323,6 +368,9 @@ if (!customElements.get("guest-access-panel")) {
       // A pending confirmation: {action: "lock" | "delete", id, name}
       this._confirm = null;
       this._error = "";
+      this._tab = "guests";
+      // The URL of the integration's icon, with the current brands token
+      this._brand = "";
     }
 
     set hass(hass) {
@@ -331,14 +379,44 @@ if (!customElements.get("guest-access-panel")) {
       if (first) {
         this._render();
         this._subscribe();
+        this._brandToken();
       }
       for (const el of this.shadowRoot.querySelectorAll("ha-menu-button, ha-form")) el.hass = hass;
     }
 
     set narrow(narrow) {
+      const changed = !!narrow !== !!this._narrow;
       this._narrow = narrow;
       const menu = this.shadowRoot.querySelector("ha-menu-button");
       if (menu) menu.narrow = narrow;
+      // The tabs move between the header and the bottom
+      if (changed && this._hass) this._render();
+    }
+
+    // The tab is the part of the path after the page: /guest-access/rooms
+    set route(route) {
+      const tab = (route?.path || "").split("/")[1] || "guests";
+      const next = TABS.some(([id]) => id === tab) ? tab : "guests";
+      if (next === this._tab) return;
+      this._tab = next;
+      this._confirm = null;
+      if (this._hass) this._render();
+    }
+
+    // The brands token for the icon; fetched again on a refresh and when the icon fails
+    async _brandToken() {
+      try {
+        const { token } = await this._hass.callWS({ type: "brands/access_token" });
+        this._brand = `${BRAND_ICON}?token=${encodeURIComponent(token)}`;
+      } catch {
+        this._brand = "";
+      }
+      this._renderHeader();
+    }
+
+    _openTab(tab) {
+      history.pushState(null, "", `${PANEL_PATH}/${tab}`);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
     }
 
     disconnectedCallback() {
@@ -414,6 +492,7 @@ if (!customElements.get("guest-access-panel")) {
       const old = this._unsub;
       this._unsub = null;
       if (old) await old.then((unsub) => unsub()).catch(() => {});
+      this._brandToken();
       if (this.isConnected && !this._unsub) this._subscribe();
       else this._loading = false;
       this._renderHeader();
@@ -434,6 +513,8 @@ if (!customElements.get("guest-access-panel")) {
           ? this._t("asOf", { time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` })
           : "";
       }
+      const brand = root.getElementById("brand");
+      if (brand && this._brand && brand.getAttribute("src") !== this._brand) brand.src = this._brand;
       const refresh = root.getElementById("refresh");
       if (refresh) {
         refresh.classList.toggle("loading", !!this._loading);
@@ -498,14 +579,15 @@ if (!customElements.get("guest-access-panel")) {
       return text;
     }
 
-    // Layout: the top app bar with the list, or a subpage with the form
+    // Layout: one header row, then a tab or a subpage with a form
 
-    // The frame changes only between the list and a form, so a re-render of the
+    // The frame changes only between tabs, forms and widths, so a re-render of the
     // content keeps the scroll position
     _render() {
       const root = this.shadowRoot;
       const editing = !!this._form;
-      const mode = editing ? `${this._form.kind}:${this._form.id ?? ""}` : "list";
+      const narrow = !!this._narrow;
+      const mode = `${editing ? `${this._form.kind}:${this._form.id ?? ""}` : `tab:${this._tab}`}|${narrow}`;
       if (this._mode === mode && root.getElementById("content")) {
         this._renderHeader();
         this._renderContent(root.getElementById("content"));
@@ -519,24 +601,53 @@ if (!customElements.get("guest-access-panel")) {
           : this._form.id
             ? this._form.originalName
             : this._t("addGuest");
+      const tabs = TABS.map(
+        ([id, icon, label]) =>
+          `<a class="tab${this._tab === id ? " active" : ""}" data-tab="${id}" href="${PANEL_PATH}/${id}">` +
+          `${narrow ? `<ha-icon icon="${icon}"></ha-icon>` : ""}<span>${esc(this._t(label))}</span></a>`,
+      ).join("");
+      // A subpage has the back arrow in place of the menu and the icon, and no tabs
       root.innerHTML = `
         <style>${STYLE}</style>
-        <ha-top-app-bar-fixed>
-          ${
-            editing
-              ? `<ha-icon-button slot="navigationIcon" id="back" label="${esc(this._t("back"))}"><ha-icon icon="mdi:arrow-left"></ha-icon></ha-icon-button>`
-              : `<ha-menu-button slot="navigationIcon"></ha-menu-button>`
-          }
-          <div slot="title">${esc(title)}</div>
-          <span class="stamp" slot="actionItems" id="stamp"></span>
-          <ha-icon-button slot="actionItems" id="refresh" label="${esc(this._t("refresh"))}"><ha-icon icon="mdi:refresh"></ha-icon></ha-icon-button>
-          <ha-icon-button slot="actionItems" id="integration" label="${esc(this._t("integrationSettings"))}"><ha-icon icon="mdi:cog-outline"></ha-icon></ha-icon-button>
-          <div class="content" id="content"></div>
-        </ha-top-app-bar-fixed>`;
+        <div class="app${narrow ? " narrow" : ""}">
+          <div class="toolbar">
+            ${
+              editing
+                ? `<ha-icon-button id="back" label="${esc(this._t("back"))}"><ha-icon icon="mdi:arrow-left"></ha-icon></ha-icon-button>`
+                : `<ha-menu-button></ha-menu-button><img class="brand" id="brand" alt="">`
+            }
+            <div class="main-title" id="title">${esc(title)}</div>
+            ${editing || narrow ? "" : `<nav class="tabs" id="tabs">${tabs}</nav>`}
+            <div class="tools" id="tools">
+              <span class="stamp" id="stamp"></span>
+              <ha-icon-button id="refresh" label="${esc(this._t("refresh"))}"><ha-icon icon="mdi:refresh"></ha-icon></ha-icon-button>
+              <ha-icon-button id="integration" label="${esc(this._t("integrationSettings"))}"><ha-icon icon="mdi:cog-outline"></ha-icon></ha-icon-button>
+            </div>
+          </div>
+          <div class="scroller"><div class="content" id="content"></div></div>
+          ${!editing && narrow ? `<nav class="bottom-tabs" id="tabs">${tabs}</nav>` : ""}
+        </div>`;
       const menu = root.querySelector("ha-menu-button");
       if (menu) {
         menu.hass = this._hass;
         menu.narrow = this._narrow;
+      }
+      // An icon with a token that ran out: fetch a new one, once per page view
+      const brand = root.getElementById("brand");
+      brand?.addEventListener(
+        "error",
+        () => {
+          if (this._brand) this._brandToken();
+        },
+        { once: true },
+      );
+      for (const link of root.querySelectorAll("a[data-tab]")) {
+        link.addEventListener("click", (e) => {
+          // A new tab or window with a modifier key, as links do
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          this._openTab(link.dataset.tab);
+        });
       }
       root.querySelector("#back")?.addEventListener("click", () => this._close());
       root.getElementById("refresh").addEventListener("click", () => this._refresh());
@@ -546,8 +657,10 @@ if (!customElements.get("guest-access-panel")) {
     }
 
     _renderContent(content) {
-      if (!this._form) this._renderList(content);
-      else if (this._form.kind === "settings") this._renderSettingsForm(content);
+      if (!this._form) {
+        if (this._tab === "rooms") this._renderRooms(content);
+        else this._renderGuests(content);
+      } else if (this._form.kind === "settings") this._renderSettingsForm(content);
       else this._renderGuestForm(content);
     }
 
@@ -574,19 +687,25 @@ if (!customElements.get("guest-access-panel")) {
       host.querySelector("#confirm-ok")?.addEventListener("click", () => this._runConfirm());
     }
 
-    // List
+    // Tabs: the guests, and the residents with the lockable rooms
 
-    _renderList(content) {
+    _about() {
+      const about = this._data?.about;
+      return `<div class="about">${esc(
+        // A release has no commit of its own; only a test deployment writes one
+        this._t(about?.commit ? "aboutCommit" : "about", {
+          version: about?.version ?? "",
+          commit: about?.commit ?? "",
+        }),
+      )}</div>`;
+    }
+
+    _renderGuests(content) {
       const data = this._data;
       if (!data) {
         content.innerHTML = this._errorAlert();
         return;
       }
-      const lock = data.lock.active
-        ? `<ha-alert alert-type="info">${esc(
-            this._t("lockActive", { locked: this._rooms(data.lock.locked_rooms), free: this._rooms(data.lock.free_rooms) }),
-          )}</ha-alert>`
-        : "";
       const guests = data.guests
         .map((guest) => {
           const [icon, color] = STATUS[guest.state.status] ?? STATUS.away;
@@ -615,11 +734,9 @@ if (!customElements.get("guest-access-panel")) {
             </div>`;
         })
         .join("");
-      const residents = data.settings.residents.map((id) => this._entityName(id)).join(", ") || this._t("none");
       content.innerHTML = `
         ${this._errorAlert()}
         ${this._confirmAlert("lock")}
-        ${lock}
         <ha-card header="${esc(this._t("guests"))}">
           <div class="card-content list">
             ${guests || `<div class="empty">${esc(this._t("noGuests"))}</div>`}
@@ -628,27 +745,8 @@ if (!customElements.get("guest-access-panel")) {
             <ha-button id="add">${esc(this._t("addGuest"))}</ha-button>
           </div>
         </ha-card>
-        <ha-card header="${esc(this._t("settings"))}">
-          <div class="card-content list">
-            <div class="row"><div class="label">${esc(this._t("residents"))}</div>
-              <div class="value">${esc(residents)}</div></div>
-            <div class="row"><div class="label">${esc(this._t("lockableRooms"))}</div>
-              <div class="value">${esc(this._rooms(data.settings.rooms.map((r) => r.area_id)))}</div></div>
-            ${data.lock.active ? "" : `<div class="row"><div class="value supporting">${esc(this._t("lockOff"))}</div></div>`}
-          </div>
-          <div class="card-actions">
-            <ha-button appearance="plain" id="settings">${esc(this._t("edit"))}</ha-button>
-          </div>
-        </ha-card>
-        <div class="about">${esc(
-          // A release has no commit of its own; only a test deployment writes one
-          this._t(data.about?.commit ? "aboutCommit" : "about", {
-            version: data.about?.version ?? "",
-            commit: data.about?.commit ?? "",
-          }),
-        )}</div>`;
+        ${this._about()}`;
       content.querySelector("#add").addEventListener("click", () => this._openGuest(null));
-      content.querySelector("#settings").addEventListener("click", () => this._openSettings());
       for (const item of content.querySelectorAll("[data-edit]")) {
         item.addEventListener("click", () => this._openGuest(item.dataset.edit));
         item.addEventListener("keydown", (e) => {
@@ -667,6 +765,37 @@ if (!customElements.get("guest-access-panel")) {
         });
       }
       this._bindConfirm(content);
+    }
+
+    _renderRooms(content) {
+      const data = this._data;
+      if (!data) {
+        content.innerHTML = this._errorAlert();
+        return;
+      }
+      const lock = data.lock.active
+        ? `<ha-alert alert-type="info">${esc(
+            this._t("lockActive", { locked: this._rooms(data.lock.locked_rooms), free: this._rooms(data.lock.free_rooms) }),
+          )}</ha-alert>`
+        : "";
+      const residents = data.settings.residents.map((id) => this._entityName(id)).join(", ") || this._t("none");
+      content.innerHTML = `
+        ${this._errorAlert()}
+        ${lock}
+        <ha-card header="${esc(this._t("settings"))}">
+          <div class="card-content list">
+            <div class="row"><div class="label">${esc(this._t("residents"))}</div>
+              <div class="value">${esc(residents)}</div></div>
+            <div class="row"><div class="label">${esc(this._t("lockableRooms"))}</div>
+              <div class="value">${esc(this._rooms(data.settings.rooms.map((r) => r.area_id)))}</div></div>
+            ${data.lock.active ? "" : `<div class="row"><div class="value supporting">${esc(this._t("lockOff"))}</div></div>`}
+          </div>
+          <div class="card-actions">
+            <ha-button appearance="plain" id="settings">${esc(this._t("edit"))}</ha-button>
+          </div>
+        </ha-card>
+        ${this._about()}`;
+      content.querySelector("#settings").addEventListener("click", () => this._openSettings());
     }
 
     async _runConfirm() {
