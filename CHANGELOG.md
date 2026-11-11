@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-11
+
+### Added
+
+- The page has the same header as Nico's other apps and integrations, on the list and on every subpage: "As of HH:MM:SS" for when the page last got its data (hidden at phone width), a refresh button that fetches the data again over the WebSocket without reloading the page (it spins while loading; an open form is redrawn and keeps what was typed), and a settings button to Home Assistant's page of the integration.
+- The page check tests the header on the list and every subpage: order, stamp, refresh (subscribes again, spins, moves the stamp on), settings (opens the integration's page without reloading), and the stamp hidden at phone width. Screenshots refreshed.
+
 ## [0.4.0] - 2026-11-10
 
 ### Added

@@ -25,6 +25,7 @@ import io
 import json
 from pathlib import Path
 import random
+import re
 import shutil
 import socket
 import subprocess
@@ -536,6 +537,10 @@ def expect(condition: bool, message: str) -> None:
 
 # The page lives in shadow roots; Playwright's CSS selectors pierce them
 PANEL = "guest-access-panel"
+STAMP = re.compile(r"^As of \d\d:\d\d:\d\d$")
+INTEGRATION_PAGE = "/config/integrations/integration/guest_access"
+# What each page sent over its WebSocket, for the refresh check
+SENT: dict[Page, list[dict[str, Any]]] = {}
 
 
 async def _open(
@@ -550,6 +555,17 @@ async def _open(
         color_scheme=options.pop("color_scheme", "light"),
     )
     page = await context.new_page()
+    sent: list[dict[str, Any]] = []
+    SENT[page] = sent
+
+    def on_frame(payload: str | bytes) -> None:
+        try:
+            message = json.loads(payload)
+        except ValueError:
+            return
+        sent.extend(message if isinstance(message, list) else [message])
+
+    page.on("websocket", lambda ws: ws.on("framesent", on_frame))
     await page.goto(f"{instance.base}/guest-access")
     await page.get_by_label("Username").fill(user[0])
     await page.get_by_label("Password", exact=True).fill(user[1])
@@ -592,6 +608,56 @@ def _guest(snapshot: dict[str, Any], guest_id: str) -> dict[str, Any] | None:
     return next((guest for guest in snapshot["guests"] if guest["id"] == guest_id), None)
 
 
+async def _header(page: Page) -> None:
+    """Stamp, refresh and settings in the top app bar, in this order, and nothing between."""
+    actions = await page.locator(f"{PANEL} [slot=actionItems]").evaluate_all(
+        "els => els.map(el => el.id)"
+    )
+    expect(actions == ["stamp", "refresh", "integration"], f"header actions are {actions}")
+    stamp = (await page.locator(f"{PANEL} #stamp").inner_text()).strip()
+    expect(bool(STAMP.match(stamp)), f"stamp is {stamp!r}")
+    for button, icon, label in (
+        ("refresh", "mdi:refresh", "Refresh"),
+        ("integration", "mdi:cog-outline", "Settings"),
+    ):
+        locator = page.locator(f"{PANEL} #{button}")
+        expect(await locator.is_visible(), f"{button} button not visible")
+        expect(await locator.get_attribute("label") == label, f"{button} button label")
+        found = await page.locator(f"{PANEL} #{button} ha-icon").get_attribute("icon")
+        expect(found == icon, f"{button} button shows {found}")
+
+
+async def _refresh(page: Page) -> None:
+    """The refresh button subscribes again, spins meanwhile and moves the stamp on."""
+    stamp = page.locator(f"{PANEL} #stamp")
+    before = (await stamp.inner_text()).strip()
+    # The stamp has seconds; a refresh in the same second would not move it
+    await page.wait_for_timeout(1100)
+    sent = SENT[page]
+    count = len(sent)
+    # Clicked from the page itself, so the spinning is seen before the data are back
+    spinning = await page.locator(f"{PANEL} #refresh").evaluate(
+        "el => { el.click(); return el.classList.contains('loading'); }"
+    )
+    expect(spinning, "the refresh button does not spin while loading")
+    await page.locator(f"{PANEL} #refresh:not(.loading)").wait_for()
+    after = (await stamp.inner_text()).strip()
+    expect(bool(STAMP.match(after)) and after != before, f"stamp {before!r} -> {after!r}")
+    types = [message.get("type") for message in sent[count:]]
+    expect("unsubscribe_events" in types, f"old subscription not ended: {types}")
+    expect("guest_access/subscribe" in types, f"data not fetched again: {types}")
+    expect(page.url.endswith("/guest-access"), f"refresh left the page: {page.url}")
+
+
+async def _settings_button(page: Page, instance: Instance) -> None:
+    """The settings button opens the integration's page inside the app, no reload."""
+    await page.evaluate("window.__noReload = true")
+    await page.locator(f"{PANEL} #integration").click()
+    await page.wait_for_url(f"{instance.base}{INTEGRATION_PAGE}")
+    await page.locator(PANEL).wait_for(state="detached")
+    expect(await page.evaluate("window.__noReload === true"), "the page was loaded anew")
+
+
 async def _until(check: Callable[[], Awaitable[bool]], what: str, seconds: float = 10) -> None:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -632,7 +698,40 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
         text = await clean.inner_text()
         expect(text.endswith(" (outside the time windows)"), text)
 
+    async def header_on_list() -> None:
+        await _header(page)
+        await _refresh(page)
+        await _header(page)
+        await _settings_button(page, instance)
+
+    async def header_on_subpages() -> None:
+        # A guest, a new guest, residents and rooms: the three after back arrow and title
+        for open_subpage, ready in (
+            (page.locator(f"{PANEL} [data-edit='g_anna']"), "Visit log"),
+            (page.get_by_role("button", name="Add guest"), "Approval"),
+            (page.locator(f"{PANEL} #settings"), "Lockable rooms"),
+        ):
+            await open_subpage.click()
+            await page.get_by_text(ready, exact=True).first.wait_for()
+            await page.locator(f"{PANEL} #back").wait_for()
+            await _header(page)
+            await page.locator(f"{PANEL} #back").click()
+            await _list(page)
+        # A refresh on a form redraws it and keeps what was typed
+        await page.locator(f"{PANEL} [data-edit='g_ben']").click()
+        name = page.get_by_role("textbox", name="Name")
+        await name.fill("Ben typed")
+        await _refresh(page)
+        expect(await name.input_value() == "Ben typed", "the refresh dropped the typed name")
+        await page.locator(f"{PANEL} #back").click()
+        await _list(page)
+        await page.locator(f"{PANEL} #settings").click()
+        await page.get_by_text("Lockable rooms", exact=True).first.wait_for()
+        await _settings_button(page, instance)
+
     await checks.run("list shows guests, residents, rooms and version", list_shows_guests)
+    await checks.run("header: stamp, refresh and settings on the list", header_on_list)
+    await checks.run("header: stamp, refresh and settings on every subpage", header_on_subpages)
     await checks.run("a guest outside its windows is not shown as expired", window_is_not_expiry)
     if shots is not None:
         await page.screenshot(path=str(shots / "guests.png"))
@@ -835,6 +934,15 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             expect(overflow <= 0, f"{scheme}: page scrolls sideways by {overflow} px")
+            expect(
+                not await phone.locator(f"{PANEL} #stamp").is_visible(),
+                f"{scheme}: the stamp shows on phone width",
+            )
+            for button in ("refresh", "integration"):
+                expect(
+                    await phone.locator(f"{PANEL} #{button}").is_visible(),
+                    f"{scheme}: {button} button missing on phone width",
+                )
             if shots is not None and scheme == "dark":
                 await phone.screenshot(path=str(shots / "phone-dark.png"))
             await phone.locator(f"{PANEL} [data-edit='g_anna']").click()
@@ -853,6 +961,7 @@ async def check_page(browser: Browser, instance: Instance, api: Api, shots: Path
                 expect(sum(channels) < 200, f"dark mode background is {background}")
             if instance.directory.exists():
                 await phone.screenshot(path=str(instance.directory / f"phone-{scheme}.png"))
+            SENT.pop(phone, None)
             await phone.context.close()
 
     await checks.run(

@@ -106,6 +106,9 @@ if (!customElements.get("guest-access-panel")) {
       csvHeader: "Date;Start;End;Hours",
       about: "Guest Access {version}",
       aboutCommit: "Guest Access {version} · commit {commit}",
+      asOf: "As of {time}",
+      refresh: "Refresh",
+      integrationSettings: "Settings",
     },
     de: {
       title: "Guest Access",
@@ -204,9 +207,14 @@ if (!customElements.get("guest-access-panel")) {
       csvHeader: "Datum;Beginn;Ende;Stunden",
       about: "Guest Access {version}",
       aboutCommit: "Guest Access {version} · Commit {commit}",
+      asOf: "Stand {time}",
+      refresh: "Aktualisieren",
+      integrationSettings: "Einstellungen",
     },
   };
   const KINDS = ["off", "once", "until", "permanent"];
+  // Home Assistant's page of the integration, behind the settings button
+  const INTEGRATION_PAGE = "/config/integrations/integration/guest_access";
   // A failed subscription, the entry still loading say, is tried again after this time
   const RETRY_MS = 5000;
   // Icon and colour per status, as the status sensor shows it
@@ -244,6 +252,12 @@ if (!customElements.get("guest-access-panel")) {
     ha-top-app-bar-fixed { height: 100%;
       --app-header-background-color: var(--sidebar-background-color, var(--card-background-color));
       --app-header-border-bottom: 1px solid var(--divider-color); }
+    /* The header's actions, as on every page of Nico's apps and integrations: stamp,
+       refresh, settings */
+    .stamp { color: var(--secondary-text-color); font-size: var(--ha-font-size-m, 14px);
+      white-space: nowrap; align-self: center; margin-inline-end: 4px; }
+    #refresh.loading ha-icon { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .about { text-align: center; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px);
       padding: 8px 0 24px; }
     .visits { margin: 8px 0; }
@@ -292,6 +306,7 @@ if (!customElements.get("guest-access-panel")) {
     ha-alert { display: block; }
     ha-alert ha-button { margin-inline-start: 8px; }
     @media (max-width: 600px) {
+      .stamp { display: none; }
       .content { padding: 8px; gap: 8px; }
       .row { flex-direction: column; align-items: flex-start; gap: 2px; }
       .row .label { width: auto; }
@@ -358,18 +373,24 @@ if (!customElements.get("guest-access-panel")) {
       this._unsub = this._hass.connection.subscribeMessage(
         (data) => {
           this._data = data;
+          this._stamp = new Date();
+          const refreshed = this._loading;
+          this._loading = false;
           if (this._subscribeFailed) {
             // Loaded after all: the error of the failed attempt is gone
             this._subscribeFailed = false;
             this._error = "";
           }
-          // An open form keeps what is being typed; only the list follows the state
-          if (!this._form) this._render();
+          // An open form keeps what is being typed; only the list follows the state.
+          // A refresh asked for redraws a form as well, from the values typed so far.
+          if (!this._form || refreshed) this._render();
+          else this._renderHeader();
         },
         { type: "guest_access/subscribe" },
       );
       const attempt = this._unsub;
       attempt.catch((err) => {
+        this._loading = false;
         this._error = err.message || String(err);
         this._subscribeFailed = true;
         this._render();
@@ -382,6 +403,42 @@ if (!customElements.get("guest-access-panel")) {
           if (this.isConnected && this._hass && !this._unsub) this._subscribe();
         }, RETRY_MS);
       });
+    }
+
+    // Header: fetch the data again over the WebSocket, without reloading the page
+    async _refresh() {
+      if (this._loading || !this._hass) return;
+      this._loading = true;
+      this._renderHeader();
+      clearTimeout(this._retry);
+      const old = this._unsub;
+      this._unsub = null;
+      if (old) await old.then((unsub) => unsub()).catch(() => {});
+      if (this.isConnected && !this._unsub) this._subscribe();
+      else this._loading = false;
+      this._renderHeader();
+    }
+
+    // Header: Home Assistant's page of the integration, opened as its own links do
+    _openIntegration() {
+      history.pushState(null, "", INTEGRATION_PAGE);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    }
+
+    _renderHeader() {
+      const root = this.shadowRoot;
+      const stamp = root.getElementById("stamp");
+      if (stamp) {
+        const d = this._stamp;
+        stamp.textContent = d
+          ? this._t("asOf", { time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` })
+          : "";
+      }
+      const refresh = root.getElementById("refresh");
+      if (refresh) {
+        refresh.classList.toggle("loading", !!this._loading);
+        refresh.disabled = !!this._loading;
+      }
     }
 
     async _call(message) {
@@ -450,6 +507,7 @@ if (!customElements.get("guest-access-panel")) {
       const editing = !!this._form;
       const mode = editing ? `${this._form.kind}:${this._form.id ?? ""}` : "list";
       if (this._mode === mode && root.getElementById("content")) {
+        this._renderHeader();
         this._renderContent(root.getElementById("content"));
         return;
       }
@@ -470,6 +528,9 @@ if (!customElements.get("guest-access-panel")) {
               : `<ha-menu-button slot="navigationIcon"></ha-menu-button>`
           }
           <div slot="title">${esc(title)}</div>
+          <span class="stamp" slot="actionItems" id="stamp"></span>
+          <ha-icon-button slot="actionItems" id="refresh" label="${esc(this._t("refresh"))}"><ha-icon icon="mdi:refresh"></ha-icon></ha-icon-button>
+          <ha-icon-button slot="actionItems" id="integration" label="${esc(this._t("integrationSettings"))}"><ha-icon icon="mdi:cog-outline"></ha-icon></ha-icon-button>
           <div class="content" id="content"></div>
         </ha-top-app-bar-fixed>`;
       const menu = root.querySelector("ha-menu-button");
@@ -478,6 +539,9 @@ if (!customElements.get("guest-access-panel")) {
         menu.narrow = this._narrow;
       }
       root.querySelector("#back")?.addEventListener("click", () => this._close());
+      root.getElementById("refresh").addEventListener("click", () => this._refresh());
+      root.getElementById("integration").addEventListener("click", () => this._openIntegration());
+      this._renderHeader();
       this._renderContent(root.getElementById("content"));
     }
 

@@ -239,7 +239,7 @@ Once Home Assistant has started, Guest Access opens a repair issue for every tra
 
 ### Page
 
-A sidebar page for administrators only, in English and German: the list of guests with photo and state, a "lock now" button that sets the approval to `off`, a form per guest (trackers, photo and note, approval and time windows, rooms and time, visit log), the residents, rooms and timings, and at the bottom the version and, when deployed with `scripts/deploy.sh`, the commit. Non-administrators get no page.
+A sidebar page for administrators only, in English and German: the list of guests with photo and state, a "lock now" button that sets the approval to `off`, a form per guest (trackers, photo and note, approval and time windows, rooms and time, visit log), the residents, rooms and timings, and at the bottom the version and, when deployed with `scripts/deploy.sh`, the commit. Every page and subpage has the same header as Nico's other apps and integrations: when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a settings button to Home Assistant's page of the integration. Non-administrators get no page.
 
 ### State
 
