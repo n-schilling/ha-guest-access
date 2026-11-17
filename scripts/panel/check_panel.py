@@ -573,6 +573,35 @@ ROW = f"{PANEL} .item[data-act='open']"
 SENT: dict[Page, list[dict[str, Any]]] = {}
 
 
+# Home Assistant's frame on the page, found through the shadow roots: where it sits, how high
+# its header is and where its tab bar (at the bottom on a phone) starts and ends, in px
+SAFE_AREA_MEASURE = """() => {
+  const find = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      if (el.localName === 'hass-tabs-subpage') return el;
+      const inner = el.shadowRoot && find(el.shadowRoot);
+      if (inner) return inner;
+    }
+    return null;
+  };
+  const frame = find(document);
+  if (!frame) return { viewport: innerHeight, frame: null, toolbar: null, tabbar: null };
+  const span = (el) => {
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return [Math.round(box.top), Math.round(box.bottom)];
+  };
+  const toolbar = frame.shadowRoot.querySelector('.toolbar');
+  const bar = frame.shadowRoot.querySelector('#tabbar.bottom-bar');
+  return {
+    viewport: innerHeight,
+    frame: span(frame),
+    toolbar: toolbar ? Math.round(toolbar.getBoundingClientRect().height) : null,
+    tabbar: span(bar),
+  };
+}"""
+
+
 async def _open(
     browser: Browser, instance: Instance, user: tuple[str, str], **options: Any
 ) -> Page:
@@ -1259,6 +1288,60 @@ async def check_page(
 
     await checks.run(
         "phone width and dark mode: areas at the bottom, no sideways scrolling", phone_and_dark
+    )
+
+    async def safe_area() -> None:
+        phone = await _open(
+            browser,
+            instance,
+            ADMIN,
+            viewport={"width": 390, "height": 844},
+            color_scheme="dark",
+        )
+        try:
+            found: dict[str, dict[str, Any]] = {}
+            for name, path in (
+                ("Guest Access", "/guest-access/guests/list"),
+                ("Automations", "/config/automation/dashboard"),
+            ):
+                await phone.goto(instance.base + path)
+                await phone.locator("hass-tabs-subpage").first.wait_for(timeout=90000)
+                await phone.locator("#ha-launch-screen").wait_for(state="detached")
+                await phone.wait_for_load_state("networkidle")
+                # An iPhone's safe area, set as Home Assistant's own debug setting sets it
+                await phone.evaluate(
+                    """() => {
+                      const style = document.createElement('style');
+                      style.textContent = ':root{--app-safe-area-inset-top:47px !important;'
+                        + '--app-safe-area-inset-bottom:34px !important;}';
+                      document.head.append(style);
+                    }"""
+                )
+                await phone.wait_for_timeout(800)
+                info: dict[str, Any] = await phone.evaluate(SAFE_AREA_MEASURE)
+                height = info["viewport"]
+                expect(
+                    info["frame"] == [0, height],
+                    f"{name}: frame at {info['frame']} instead of [0, {height}]",
+                )
+                expect(info["toolbar"] == 56 + 47, f"{name}: header {info['toolbar']} px high")
+                tabbar = info["tabbar"]
+                expect(
+                    tabbar is not None and tabbar[1] == height and tabbar[0] >= 0,
+                    f"{name}: tab bar at {tabbar}, viewport {height}",
+                )
+                found[name] = info
+            expect(
+                found["Guest Access"] == found["Automations"],
+                f"Guest Access and Automations differ: {found}",
+            )
+        finally:
+            SENT.pop(phone, None)
+            await _close(phone)
+
+    await checks.run(
+        "phone with a safe area: header and bottom areas fit as on Home Assistant's own pages",
+        safe_area,
     )
 
     async def recovers_once_loaded() -> None:

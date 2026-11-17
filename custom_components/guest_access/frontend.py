@@ -47,6 +47,8 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         # The content hash makes browsers fetch every changed page, also within a version
         module_url=f"{FRONTEND_URL_BASE}/{PANEL_FILENAME}?v={digest}",
         require_admin=True,
+        # The frame (hass-tabs-subpage) keeps clear of a phone's notch and rounded corners itself
+        handle_safe_area=True,
     )
 
 

@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-11-17
+
+### Fixed
+
+- On a phone with a notch or rounded corners (iPhone) the page's header was too high and the bar at the bottom ran off the screen. The panel now leaves the safe area to Home Assistant's frame, as Home Assistant's own pages do.
+
+### Added
+
+- The page check tests phone width with an iPhone's safe area: frame from top to bottom of the screen, header 56 px plus the top inset, the areas at the bottom ending at the screen's edge, the same as on Home Assistant's own Automations page.
+
 ## [0.7.0] - 2026-11-17
 
 ### Changed
