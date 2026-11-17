@@ -559,8 +559,16 @@ def expect(condition: bool, message: str) -> None:
 PANEL = "guest-access-panel"
 STAMP = re.compile(r"^As of \d\d:\d\d:\d\d$")
 INTEGRATION_PAGE = "/config/integrations/integration/guest_access"
-BRAND_ICON = "/api/brands/integration/guest_access/icon.png"
-TAB_PATH = re.compile(r"/guest-access(/(guests|rooms))?$")
+VERSION = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))["version"]
+# The pages of the two areas, and the tab each one marks below the header (None: no tabs)
+PAGES = {
+    "guests/list": None,
+    "setup/overview": "overview",
+    "setup/residents": "residents",
+    "setup/rooms": "rooms",
+    "setup/timings": "timings",
+}
+ROW = f"{PANEL} .item[data-act='open']"
 # What each page sent over its WebSocket, for the refresh check
 SENT: dict[Page, list[dict[str, Any]]] = {}
 
@@ -600,23 +608,28 @@ async def _open(
     return page
 
 
-async def _list(page: Page) -> None:
-    """The list is there and Home Assistant's loading screen has faded out."""
+async def _goto(page: Page, instance: Instance, path: str) -> None:
+    """A page of the panel, with its content drawn and Home Assistant's loading screen gone."""
+    await page.goto(f"{instance.base}/guest-access/{path}")
     # The first load of the frontend takes a while on a slow CI machine
-    await page.locator(f"{PANEL} [data-edit]").first.wait_for(timeout=90000)
+    await page.locator(f"{PANEL} hass-tabs-subpage").first.wait_for(timeout=90000)
     await page.locator("#ha-launch-screen").wait_for(state="detached")
+    await _ready(page)
 
 
-async def _rooms_tab(page: Page) -> None:
-    """The Rooms tab is there."""
-    await page.locator(f"{PANEL} #settings").wait_for(timeout=90000)
-    await page.locator("#ha-launch-screen").wait_for(state="detached")
+async def _ready(page: Page) -> None:
+    """The content of the page in the address is drawn."""
+    if "?key=" in page.url:
+        await page.locator(f"{PANEL} .subname").wait_for()
+        await page.locator(f"{PANEL} #sheet ha-card").first.wait_for()
+    elif "/guests/list" in page.url:
+        await page.locator(ROW).first.wait_for(timeout=60000)
+    else:
+        await page.locator(f"{PANEL} #sheet ha-card").first.wait_for(timeout=60000)
 
 
 async def _headlines(page: Page) -> list[str]:
-    return [
-        text.strip() for text in await page.locator(f"{PANEL} .item .headline").all_inner_texts()
-    ]
+    return [text.strip() for text in await page.locator(f"{ROW} .headline").all_inner_texts()]
 
 
 async def _snapshot(api: Api, instance: Instance) -> dict[str, Any]:
@@ -642,73 +655,60 @@ def _guest(snapshot: dict[str, Any], guest_id: str) -> dict[str, Any] | None:
     return next((guest for guest in snapshot["guests"] if guest["id"] == guest_id), None)
 
 
-async def _header(page: Page, *, subpage: bool = False, phone: bool = False) -> None:
-    """One header row: icon, name and tabs (a subpage: back arrow and title), then stamp,
-    refresh and settings in this order, and nothing between."""
-    actions = await page.locator(f"{PANEL} #tools > *").evaluate_all("els => els.map(el => el.id)")
-    expect(actions == ["stamp", "refresh", "integration"], f"header actions are {actions}")
-    if subpage:
-        expect(await page.locator(f"{PANEL} #back").is_visible(), "no back arrow on a subpage")
-        for part in ("brand", "tabs"):
-            expect(await page.locator(f"{PANEL} #{part}").count() == 0, f"{part} on a subpage")
+async def _frame(page: Page, *, sub: bool, page_id: str | None = None) -> dict[str, Any]:
+    """Home Assistant's frame: the two areas as tabs and the menu, or a back arrow and a name."""
+    info: dict[str, Any] = await page.locator(PANEL).evaluate(
+        """el => {
+          const frame = el.shadowRoot.getElementById('frame');
+          const bar = frame.shadowRoot.getElementById('tabbar');
+          const tabs = bar ? [...bar.querySelectorAll('ha-tab')] : [];
+          const active = el.shadowRoot.querySelector('#subtabs ha-tab-group-tab[active]');
+          return {
+            tabs: tabs.length,
+            names: tabs.map((t) => t.textContent.trim()),
+            active: tabs.filter((t) => t.active).length,
+            bottom: !!bar && bar.classList.contains('bottom-bar'),
+            back: !!frame.shadowRoot.querySelector('ha-icon-button-arrow-prev'),
+            menu: !!frame.shadowRoot.querySelector('ha-menu-button'),
+            name: el.shadowRoot.querySelector('.subname')?.textContent.trim() || null,
+            page: active ? active.getAttribute('panel') : null,
+            views: el.shadowRoot.querySelectorAll('#views ha-tab-group-tab').length,
+          };
+        }"""
+    )
+    if sub:
+        expect(info["tabs"] == 0 and info["back"] and not info["menu"], f"subpage frame {info}")
+        expect(bool(info["name"]), f"no name in the header {info}")
+        expect(info["views"] == 4, f"the views of a guest {info}")
     else:
-        title = (await page.locator(f"{PANEL} #title").inner_text()).strip()
-        expect(title == "Guest Access", f"title is {title!r}")
-        # The integration's own icon, loaded through Home Assistant's brands view
-        brand = page.locator(f"{PANEL} #brand")
-        await brand.wait_for()
-        await _until(
-            lambda: brand.evaluate("img => img.complete && img.naturalWidth > 0"),
-            "the icon to load",
+        expect(
+            info["tabs"] == 2 and info["active"] == 1 and info["menu"] and not info["back"],
+            f"frame {info}",
         )
-        src = await brand.get_attribute("src") or ""
-        expect(src.startswith(f"{BRAND_ICON}?token="), f"icon from {src!r}")
-        box = await brand.bounding_box()
-        expect(box is not None and round(box["width"]) == 24, f"icon is {box}")
-        tabs = await page.locator(f"{PANEL} #tabs .tab").all_inner_texts()
-        expect([text.strip() for text in tabs] == ["Guests", "Rooms"], f"tabs are {tabs}")
-        # The tabs sit in the header row next to the name, or at the bottom at phone width
-        rows = await page.locator(PANEL).evaluate(
-            """el => {
-              const root = el.shadowRoot;
-              const middle = (part) => {
-                const r = root.getElementById(part).getBoundingClientRect();
-                return { top: r.top, middle: r.top + r.height / 2, bottom: r.bottom };
-              };
-              const bar = root.querySelector(".toolbar").getBoundingClientRect();
-              return { bar: { top: bar.top, bottom: bar.bottom }, title: middle("title"),
-                tabs: middle("tabs"), brand: middle("brand"), tools: middle("tools"),
-                bottom: root.getElementById("tabs").classList.contains("bottom-tabs") };
-            }"""
-        )
-        if phone:
-            expect(rows["bottom"], "the tabs are not at the bottom at phone width")
-            expect(rows["tabs"]["top"] > rows["bar"]["bottom"] + 200, f"tabs at {rows}")
-        else:
-            expect(not rows["bottom"], "bottom tabs on desktop width")
-            expect(
-                abs(rows["tabs"]["top"] - rows["bar"]["top"]) < 1
-                and rows["tabs"]["bottom"] <= rows["bar"]["bottom"],
-                f"the tabs are not in the header row: {rows}",
-            )
-        for part in ("brand", "tabs", "tools"):
-            if phone and part == "tabs":
-                continue
-            expect(
-                abs(rows[part]["middle"] - rows["title"]["middle"]) < 2,
-                f"{part} not in the row of the name: {rows}",
-            )
-    stamp = (await page.locator(f"{PANEL} #stamp").inner_text()).strip()
-    expect(bool(STAMP.match(stamp)), f"stamp is {stamp!r}")
-    for button, icon, label in (
-        ("refresh", "mdi:refresh", "Refresh"),
-        ("integration", "mdi:cog-outline", "Settings"),
+        expect(info["page"] == page_id, f"tab of the page: {info['page']} for {page_id}")
+    return info
+
+
+async def _header(page: Page) -> None:
+    """The header's actions on every page and subpage: stamp, refresh, integration."""
+    order = await page.locator(PANEL).evaluate(
+        "el => [...el.shadowRoot.querySelector('[slot=toolbar-icon]').children].map(e => e.id)"
+    )
+    expect(order == ["stamp", "refresh", "integration"], f"header actions {order}")
+    stamp = page.locator(f"{PANEL} #stamp")
+    await _until(lambda: _stamp_ok(stamp), "the stamp 'As of HH:MM:SS' in the header")
+    for button, path, label in (
+        ("refresh", "M17.65,6.35", "Refresh"),
+        ("integration", "M12,8A4,4", "Integration in Home Assistant"),
     ):
-        locator = page.locator(f"{PANEL} #{button}")
-        expect(await locator.is_visible(), f"{button} button not visible")
-        expect(await locator.get_attribute("label") == label, f"{button} button label")
-        found = await page.locator(f"{PANEL} #{button} ha-icon").get_attribute("icon")
-        expect(found == icon, f"{button} button shows {found}")
+        el = page.locator(f"{PANEL} ha-icon-button#{button}")
+        expect(await el.is_visible(), f"{button} button not visible")
+        expect((await el.get_attribute("path") or "").startswith(path), f"{button}: wrong icon")
+        expect(await el.get_attribute("label") == label, f"{button}: label")
+
+
+async def _stamp_ok(stamp: Any) -> bool:
+    return await stamp.is_visible() and bool(STAMP.match((await stamp.inner_text()).strip()))
 
 
 async def _refresh(page: Page) -> None:
@@ -719,24 +719,27 @@ async def _refresh(page: Page) -> None:
     await page.wait_for_timeout(1100)
     sent = SENT[page]
     count = len(sent)
+    url = page.url
+    await page.evaluate("window.__noReload = true")
     # Clicked from the page itself, so the spinning is seen before the data are back
-    spinning = await page.locator(f"{PANEL} #refresh").evaluate(
+    spinning = await page.locator(f"{PANEL} ha-icon-button#refresh").evaluate(
         "el => { el.click(); return el.classList.contains('loading'); }"
     )
     expect(spinning, "the refresh button does not spin while loading")
-    await page.locator(f"{PANEL} #refresh:not(.loading)").wait_for()
+    await page.locator(f"{PANEL} ha-icon-button#refresh:not(.loading)").wait_for()
     after = (await stamp.inner_text()).strip()
     expect(bool(STAMP.match(after)) and after != before, f"stamp {before!r} -> {after!r}")
     types = [message.get("type") for message in sent[count:]]
     expect("unsubscribe_events" in types, f"old subscription not ended: {types}")
     expect("guest_access/subscribe" in types, f"data not fetched again: {types}")
-    expect(bool(TAB_PATH.search(page.url)), f"refresh left the page: {page.url}")
+    expect(page.url == url, f"refresh left the page: {page.url}")
+    expect(await page.evaluate("window.__noReload === true"), "Refresh reloaded the page")
 
 
-async def _settings_button(page: Page, instance: Instance) -> None:
-    """The settings button opens the integration's page inside the app, no reload."""
+async def _integration_button(page: Page, instance: Instance) -> None:
+    """The integration button opens the integration's page inside the app, no reload."""
     await page.evaluate("window.__noReload = true")
-    await page.locator(f"{PANEL} #integration").click()
+    await page.locator(f"{PANEL} ha-icon-button#integration").click()
     await page.wait_for_url(f"{instance.base}{INTEGRATION_PAGE}")
     await page.locator(PANEL).wait_for(state="detached")
     expect(await page.evaluate("window.__noReload === true"), "the page was loaded anew")
@@ -760,6 +763,16 @@ async def _close(page: Page) -> None:
         print(f"note: a browser context did not close within {CLOSE_SECONDS} s")
 
 
+async def _fab_hidden(page: Page) -> bool:
+    return bool(await page.locator(f"{PANEL} ha-button#save").is_hidden())
+
+
+async def _settle(page: Page) -> None:
+    """Let animations end and the pointer leave before a picture."""
+    await page.mouse.move(0, 0)
+    await page.wait_for_timeout(500)
+
+
 async def check_page(
     browser: Browser, instance: Instance, api: Api, shots: Path | None, checks: Checks
 ) -> None:
@@ -767,162 +780,246 @@ async def check_page(
     page = await _open(browser, instance, ADMIN)
 
     async def from_list() -> None:
-        """Every check starts on the Guests tab, whatever the one before left behind."""
-        await page.goto(f"{instance.base}/guest-access")
-        await _list(page)
+        """Every check starts on the list of guests, whatever the one before left behind."""
+        await _goto(page, instance, "guests/list")
 
     checks.before = from_list
 
     async def list_shows_guests() -> None:
-        await _list(page)
         headlines = await _headlines(page)
         expect(len(headlines) == 5, f"5 guests expected, got {headlines}")
         expect(headlines[0].startswith("Anna · Counts as home"), headlines[0])
         expect(any(line.startswith("Chris · No approval") for line in headlines), str(headlines))
-        text = await page.locator(f"{PANEL} #content").inner_text()
-        expect("Sam, Robin" not in text, "residents on the Guests tab")
-        about = await page.locator(f"{PANEL} .about").inner_text()
-        expect(about.startswith("Guest Access ") and "commit" in about.lower(), about)
         expect(
-            await page.locator(f"{PANEL} [data-lock='g_chris']").count() == 0,
+            await page.locator(f"{PANEL} [data-act='lock'][data-key='g_chris']").count() == 0,
             "locked guest has a lock button",
         )
-
-    async def window_is_not_expiry() -> None:
-        clean = page.locator(f"{PANEL} [data-edit='g_clean'] .supporting").first
+        # The room lock in one line, its why behind the (i)
+        alert = page.locator(f"{PANEL} ha-alert", has_text="Room lock")
+        expect(await alert.count() == 1, "the room lock line is missing")
+        expect(await alert.locator("ha-icon-button.help").count() == 1, "the lock line has no (i)")
+        clean = page.locator(f"{PANEL} .item[data-key='g_clean'] .supporting").first
         text = await clean.inner_text()
         expect(text.endswith(" (outside the time windows)"), text)
+        if shots is not None:
+            await _settle(page)
+            await page.screenshot(path=str(shots / "guests.png"))
 
-    async def tabs_in_the_url() -> None:
-        async def active() -> str:
-            return (await page.locator(f"{PANEL} #tabs .tab.active").inner_text()).strip()
+    await checks.run(
+        "the guests with their state, the room lock in one line, windows not expiry",
+        list_shows_guests,
+    )
 
-        expect(await active() == "Guests", "Guests is not the first tab")
-        await page.locator(f"{PANEL} #tabs .tab", has_text="Rooms").click()
-        await _rooms_tab(page)
-        expect(page.url.endswith("/guest-access/rooms"), f"Rooms tab at {page.url}")
-        expect(await active() == "Rooms", "Rooms is not marked")
-        text = await page.locator(f"{PANEL} #content").inner_text()
-        expect("Sam, Robin" in text, "residents missing")
-        expect("Office, Bedroom, Kids room" in text, "lockable rooms missing")
-        expect("Room lock" in text, "room lock text missing")
-        expect(await page.locator(f"{PANEL} [data-edit]").count() == 0, "guests on Rooms")
-        expect(await page.locator(f"{PANEL} .about").count() == 1, "version missing on Rooms")
-        # A reload stays on the tab, and the back button of the browser goes back
-        await page.reload()
-        await _rooms_tab(page)
-        expect(await active() == "Rooms", "the reload left the Rooms tab")
+    async def header_on_every_page() -> None:
+        for path, tab in PAGES.items():
+            await _goto(page, instance, path)
+            try:
+                await _header(page)
+                await _frame(page, sub=False, page_id=tab)
+            except AssertionError as err:
+                raise AssertionError(f"{path}: {err}") from err
+        for path in ("guests/list?key=g_anna", "guests/list?key=new"):
+            await _goto(page, instance, path)
+            try:
+                await _header(page)
+                await _frame(page, sub=True)
+            except AssertionError as err:
+                raise AssertionError(f"{path}: {err}") from err
+
+    await checks.run(
+        "every page: the two areas as Home Assistant's tabs, its own tab, stamp, refresh, "
+        "integration; a guest with back arrow, name and views",
+        header_on_every_page,
+    )
+
+    async def setup_overview() -> None:
+        await _goto(page, instance, "setup/overview")
+        steps = page.locator(f"{PANEL} .item[data-act='go']")
+        expect(await steps.count() == 3, f"{await steps.count()} steps")
+        done = await page.locator(f"{PANEL} .lead.step.done").count()
+        expect(done == 3, f"{done} steps done in the made-up home")
+        labels = await page.locator(f"{PANEL} .lead.step").evaluate_all(
+            "els => els.map(e => e.getAttribute('aria-label'))"
+        )
+        expect(labels == ["done"] * 3, f"the state of the steps without text: {labels}")
+        about = (await page.locator(f"{PANEL} .about").inner_text()).strip()
+        expect(about.startswith(f"Guest Access {VERSION}") and "commit" in about, about)
+        await _goto(page, instance, "guests/list")
+        expect(await page.locator(f"{PANEL} .about").count() == 0, "the version on the list")
+        await _goto(page, instance, "setup/overview")
+        await steps.nth(1).focus()
+        await page.keyboard.press("Enter")
+        await page.wait_for_url("**/guest-access/setup/rooms")
+        if shots is not None:
+            await _ready(page)
+            await _settle(page)
+            await page.screenshot(path=str(shots / "rooms.png"))
+
+    await checks.run("the setup overview: three steps, the version line", setup_overview)
+
+    async def old_addresses() -> None:
+        # Bookmarks and links of before: to the page that took the place
+        for old, new in (
+            ("rooms", "/guest-access/setup/rooms"),
+            ("guests", "/guest-access/guests/list"),
+            ("", "/guest-access/guests/list"),
+            ("setup", "/guest-access/setup/overview"),
+        ):
+            await page.goto(f"{instance.base}/guest-access/{old}")
+            await page.wait_for_url(f"**{new}")
+        # A change of the query alone opens the guest it names
+        await _goto(page, instance, "guests/list")
+        await page.evaluate(
+            """() => {
+              history.pushState(null, '', '/guest-access/guests/list?key=g_ben');
+              window.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
+            }"""
+        )
+        await _until(
+            lambda: page.locator(f"{PANEL} .subname").filter(has_text="Ben").count(),
+            "Ben's page after a change of the query alone",
+        )
         await page.go_back()
-        await _list(page)
-        expect(await active() == "Guests", "back did not return to Guests")
-        # The edit of residents and rooms returns to the Rooms tab
-        await page.goto(f"{instance.base}/guest-access/rooms")
-        await _rooms_tab(page)
-        await page.locator(f"{PANEL} #settings").click()
-        await page.get_by_text("Lockable rooms", exact=True).first.wait_for()
-        await page.locator(f"{PANEL} #back").click()
-        await _rooms_tab(page)
-        expect(page.url.endswith("/guest-access/rooms"), f"back from the form to {page.url}")
-        await _header(page)
+        await page.locator(ROW).first.wait_for()
+
+    await checks.run(
+        "old addresses and a change of the query alone lead to the right page", old_addresses
+    )
+
+    async def views_in_the_url() -> None:
+        await page.locator(f"{PANEL} .item[data-key='g_anna']").click()
+        await page.wait_for_url("**/guest-access/guests/list?key=g_anna")
+        await _frame(page, sub=True)
+        expect((await page.locator(f"{PANEL} .subname").inner_text()).strip() == "Anna", "name")
+        await page.locator(f"{PANEL} #views ha-tab-group-tab[panel='approval']").click()
+        await page.wait_for_url("**/guest-access/guests/list?key=g_anna&view=approval")
+        await page.locator(f"{PANEL} ha-settings-row.num", has_text="Grace time").wait_for()
+        await page.reload()
+        await _ready(page)
+        active = await page.locator(f"{PANEL} #views ha-tab-group-tab[active]").get_attribute(
+            "panel"
+        )
+        expect(active == "approval", f"the reload left the view: {active}")
+        # The back arrow returns to the list
+        await page.locator(PANEL).evaluate(
+            "el => el.shadowRoot.getElementById('frame').shadowRoot"
+            ".querySelector('ha-icon-button-arrow-prev').click()"
+        )
+        await page.wait_for_url("**/guest-access/guests/list")
+        await page.locator(ROW).first.wait_for()
+
+    await checks.run("a guest's views in the address, the back arrow to the list", views_in_the_url)
 
     async def header_on_list() -> None:
-        await _header(page)
         await _refresh(page)
         await _header(page)
-        await _settings_button(page, instance)
-
-    async def header_on_subpages() -> None:
-        # A guest, a new guest, residents and rooms: the three after back arrow and title
-        for tab, open_subpage, ready in (
-            ("guests", page.locator(f"{PANEL} [data-edit='g_anna']"), "Visit log"),
-            ("guests", page.get_by_role("button", name="Add guest"), "Approval"),
-            ("rooms", page.locator(f"{PANEL} #settings"), "Lockable rooms"),
-        ):
-            await page.goto(f"{instance.base}/guest-access/{tab}")
-            await (_list(page) if tab == "guests" else _rooms_tab(page))
-            await open_subpage.click()
-            await page.get_by_text(ready, exact=True).first.wait_for()
-            await page.locator(f"{PANEL} #back").wait_for()
-            await _header(page, subpage=True)
-            await page.locator(f"{PANEL} #back").click()
-            await (_list(page) if tab == "guests" else _rooms_tab(page))
-        await page.goto(f"{instance.base}/guest-access")
-        await _list(page)
-        # A refresh on a form redraws it and keeps what was typed
-        await page.locator(f"{PANEL} [data-edit='g_ben']").click()
+        # A refresh on a guest keeps what was typed
+        await _goto(page, instance, "guests/list?key=g_ben")
         name = page.get_by_role("textbox", name="Name")
         await name.fill("Ben typed")
         await _refresh(page)
         expect(await name.input_value() == "Ben typed", "the refresh dropped the typed name")
-        await page.locator(f"{PANEL} #back").click()
-        await _list(page)
-        await page.goto(f"{instance.base}/guest-access/rooms")
-        await _rooms_tab(page)
-        await page.locator(f"{PANEL} #settings").click()
-        await page.get_by_text("Lockable rooms", exact=True).first.wait_for()
-        await _settings_button(page, instance)
+        await _goto(page, instance, "setup/timings")
+        await _integration_button(page, instance)
 
-    await checks.run("Guests tab shows the guests and the version", list_shows_guests)
     await checks.run(
-        "tabs Guests and Rooms in the header row, kept in the URL, Rooms with residents",
-        tabs_in_the_url,
+        "Refresh fetches the data again, spins, sets the stamp; the integration button",
+        header_on_list,
     )
-    await checks.run("header: icon, name, tabs, stamp, refresh and settings", header_on_list)
-    await checks.run("header: stamp, refresh and settings on every subpage", header_on_subpages)
-    await checks.run("a guest outside its windows is not shown as expired", window_is_not_expiry)
-    if shots is not None:
-        await page.screenshot(path=str(shots / "guests.png"))
 
     async def edit_shows_windows() -> None:
-        await page.locator(f"{PANEL} [data-edit='g_clean']").click()
-        await page.get_by_text("Time windows", exact=True).wait_for()
+        await _goto(page, instance, "guests/list?key=g_clean")
         await page.get_by_text("Cleaning service key tag").first.wait_for()
+        await _goto(page, instance, "guests/list?key=g_clean&view=approval")
+        await page.locator(f"{PANEL} .card-header", has_text="Time windows").wait_for()
         weekday = (datetime.now(TIME_ZONE) + timedelta(days=2)).strftime("%A")
         await page.get_by_text(weekday, exact=True).first.wait_for()
         if shots is not None:
-            await page.set_viewport_size({"width": 1000, "height": 1240})
+            await page.set_viewport_size({"width": 1000, "height": 1000})
+            await _settle(page)
             await page.screenshot(path=str(shots / "guest.png"))
             await page.set_viewport_size({"width": 1000, "height": 760})
-        await page.locator(f"{PANEL} #back").click()
-        await _list(page)
 
-    await checks.run("form of a guest with tracker and time windows", edit_shows_windows)
+    await checks.run("a guest's approval with its time windows", edit_shows_windows)
 
     async def visit_log() -> None:
-        await page.locator(f"{PANEL} [data-edit='g_anna']").click()
-        card = page.locator(f"{PANEL} ha-card", has_text="Visit log").first
-        await card.wait_for()
-        await card.scroll_into_view_if_needed()
-        text = await card.inner_text()
-        expect("Visit running since" in text, "running visit missing")
+        await _goto(page, instance, "guests/list?key=g_anna&view=log")
+        await page.get_by_text("Visit running since", exact=False).first.wait_for()
+        text = await page.locator(f"{PANEL} #sheet").inner_text()
         expect("Last month:" in text and "visits" in text, "monthly total missing")
         expect(" 1 visits" not in text, "plural for one visit")
         if shots is not None:
-            await page.wait_for_timeout(300)
-            await card.screenshot(path=str(shots / "visit-log.png"))
+            await _settle(page)
+            await page.locator(f"{PANEL} #sheet").screenshot(path=str(shots / "visit-log.png"))
         async with page.expect_download() as download:
-            await card.get_by_role("button", name="Export as CSV").click()
+            await page.get_by_role("button", name="Export as CSV").click()
         path = await (await download.value).path()
         csv = await asyncio.to_thread(Path(path).read_text, encoding="utf-8-sig")
         expect(csv.count("\n") > 10, "CSV has too few rows")
-        await page.locator(f"{PANEL} #back").click()
-        await _list(page)
 
     await checks.run("visit log with totals and CSV export", visit_log)
 
+    async def settings_saved() -> None:
+        await _goto(page, instance, "setup/timings")
+        rows = page.locator(f"{PANEL} ha-settings-row")
+        helps = page.locator(f"{PANEL} ha-settings-row ha-icon-button.help")
+        expect(await rows.count() == await helps.count() == 4, "a settings row without its (i)")
+        expect(await _fab_hidden(page), "a save button with nothing changed")
+        resume = page.get_by_role("textbox", name="Time to be seen again after a restart")
+        await resume.wait_for()
+        expect(await resume.input_value() == "10", await resume.input_value())
+        # The (i) beside a setting: a tap shows its explanation in Home Assistant's tooltip
+        row = rows.filter(has_text="Keep single visits")
+        await row.locator("ha-icon-button.help").click()
+        tip = row.locator("ha-tooltip")
+        await _until(lambda: tip.evaluate("el => el.open === true"), "the explanation")
+        expect("3650" in await tip.evaluate("el => el.textContent"), "wrong explanation")
+        await resume.fill("12")
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").wait_for()
+        await resume.fill("10")
+        await _until(lambda: _fab_hidden(page), "the save button to go with the old value")
+        await resume.fill("12")
+        if shots is not None:
+            await _settle(page)
+            await page.screenshot(path=str(shots / "settings.png"))
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
+
+        async def saved() -> bool:
+            return bool((await _snapshot(api, instance))["settings"]["resume_minutes"] == 12)
+
+        await _until(saved, "the new resume time in the integration")
+        await _until(lambda: _fab_hidden(page), "the save button to go after saving")
+        # Every guest's setting is a row with its (i) as well
+        for view in ("details", "approval", "rooms", "log"):
+            await _goto(page, instance, f"guests/list?key=g_anna&view={view}")
+            rows = page.locator(f"{PANEL} ha-settings-row")
+            count = await rows.count()
+            expect(count > 0, f"{view}: no settings rows")
+            expect(
+                await page.locator(f"{PANEL} ha-settings-row ha-icon-button.help").count() == count,
+                f"{view}: a row without its (i)",
+            )
+
+    await checks.run(
+        "settings: rows with their (i), one save button while changed, reaches the integration",
+        settings_saved,
+    )
+
     async def rename_guest() -> None:
-        await page.locator(f"{PANEL} [data-edit='g_ben']").click()
+        await _goto(page, instance, "guests/list?key=g_ben")
+        expect(await _fab_hidden(page), "a save button on a guest not changed")
         name = page.get_by_role("textbox", name="Name")
         await name.fill("Ben Example")
-        await page.get_by_role("button", name="Save").click()
-        await _list(page)
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
 
         async def renamed() -> bool:
             guest = _guest(await _snapshot(api, instance), "g_ben")
-            # The photo, not touched in the form, stays
+            # The photo, not touched here, stays
             return guest is not None and guest["name"] == "Ben Example" and bool(guest["picture"])
 
         await _until(renamed, "the new name in the integration")
+        await _until(lambda: _fab_hidden(page), "the save button to go after saving")
+        await _goto(page, instance, "guests/list")
         expect(
             any(line.startswith("Ben Example ·") for line in await _headlines(page)),
             "list shows the old name",
@@ -931,9 +1028,8 @@ async def check_page(
     await checks.run("renaming a guest reaches the integration", rename_guest)
 
     async def lock_guest() -> None:
-        await page.locator(f"{PANEL} [data-lock='g_grandma']").click()
-        alert = page.locator(f"{PANEL} ha-alert", has_text="Lock Grandma?")
-        await alert.wait_for()
+        await page.locator(f"{PANEL} [data-act='lock'][data-key='g_grandma']").click()
+        await page.locator(f"{PANEL} ha-alert", has_text="Lock Grandma?").wait_for()
         await page.locator(f"{PANEL} #confirm-ok").click()
 
         async def locked() -> bool:
@@ -941,33 +1037,37 @@ async def check_page(
             return guest is not None and guest["approval"]["kind"] == "off"
 
         await _until(locked, "the lock in the integration")
-        await page.locator(f"{PANEL} [data-lock='g_grandma']").wait_for(state="detached")
+        await page.locator(f"{PANEL} [data-act='lock'][data-key='g_grandma']").wait_for(
+            state="detached"
+        )
 
     await checks.run("locking a guest after confirming", lock_guest)
 
     async def keyboard_on_lock_button() -> None:
-        button = page.locator(f"{PANEL} [data-lock='g_anna']")
+        button = page.locator(f"{PANEL} [data-act='lock'][data-key='g_anna']")
         await button.focus()
         await page.keyboard.press("Enter")
         await page.locator(f"{PANEL} ha-alert", has_text="Lock Anna?").wait_for()
-        expect(
-            await page.get_by_text("Time windows", exact=True).count() == 0, "Enter opened the form"
-        )
+        expect("?key=" not in page.url, "Enter opened the guest")
         await page.locator(f"{PANEL} #confirm-cancel").click()
         guest = _guest(await _snapshot(api, instance), "g_anna")
         expect(
             guest is not None and guest["approval"]["kind"] == "permanent",
             "cancel locked the guest",
         )
+        # A row opens its guest with Enter, as a button would
+        await page.locator(f"{PANEL} .item[data-key='g_chris']").focus()
+        await page.keyboard.press("Enter")
+        await page.wait_for_url("**/guest-access/guests/list?key=g_chris")
 
     await checks.run(
-        "Enter on the lock button asks, Cancel keeps the guest", keyboard_on_lock_button
+        "Enter on the lock button asks, Cancel keeps the guest; Enter on a row opens it",
+        keyboard_on_lock_button,
     )
 
     async def delete_log() -> None:
-        await page.locator(f"{PANEL} [data-edit='g_clean']").click()
-        card = page.locator(f"{PANEL} ha-card", has_text="Visit log").first
-        await card.get_by_role("button", name="Delete log").click()
+        await _goto(page, instance, "guests/list?key=g_clean&view=log")
+        await page.get_by_role("button", name="Delete log").click()
         await page.locator(f"{PANEL} #confirm-ok").click()
 
         async def emptied() -> bool:
@@ -975,38 +1075,56 @@ async def check_page(
             return guest is not None and not guest["log"]["visits"] and not guest["log"]["months"]
 
         await _until(emptied, "an empty visit log")
-        await page.locator(f"{PANEL} #back").click()
-        await _list(page)
 
     await checks.run("deleting a visit log after confirming", delete_log)
-
-    async def save_error_is_shown() -> None:
-        before = len((await _snapshot(api, instance))["guests"])
-        await page.get_by_role("button", name="Add guest").click()
-        await page.get_by_role("button", name="Save").click()
-        await page.locator(f"{PANEL} ha-alert[alert-type='error']").wait_for()
-        expect(
-            len((await _snapshot(api, instance))["guests"]) == before, "an empty guest was saved"
-        )
-        await page.locator(f"{PANEL} #back").click()
-        await _list(page)
-
-    await checks.run("saving an empty guest shows the error and saves nothing", save_error_is_shown)
 
     async def images() -> set[str]:
         listed = await api.ws(instance.token, {"type": "image/list"})
         return {item["id"] for item in listed["result"]}
 
+    async def errors_read_alike() -> None:
+        # A guest without trackers: one line by its kind, Home Assistant's message behind the (i)
+        before = len((await _snapshot(api, instance))["guests"])
+        await page.get_by_role("button", name="Add guest").click()
+        await page.wait_for_url("**/guest-access/guests/list?key=new")
+        expect(await _fab_hidden(page), "a save button on an empty new guest")
+        await page.get_by_role("textbox", name="Name").fill("Nobody")
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
+        alert = page.locator(
+            f"{PANEL} ha-alert[alert-type='error']", has_text="The input does not fit."
+        )
+        await alert.wait_for()
+        said = await alert.locator("ha-tooltip").evaluate("el => el.textContent")
+        expect(said.strip().startswith("Message: "), said)
+        expect(
+            len((await _snapshot(api, instance))["guests"]) == before, "an empty guest was saved"
+        )
+        # The photo upload is HTTP: its answer reads the same
+        files = await images()
+        await page.locator(f"{PANEL} input[type=file]").set_input_files(
+            {"name": "x.png", "mimeType": "image/png", "buffer": b"not an image"}
+        )
+
+        async def told() -> bool:
+            said = await alert.locator("ha-tooltip").evaluate("el => el.textContent")
+            return "image" in said.lower()
+
+        await _until(told, "the upload's error behind the (i)")
+        expect(await images() == files, "a broken photo was kept")
+
+    await checks.run(
+        "an error reads one line by its kind, the message behind its (i)", errors_read_alike
+    )
+
     async def photo_and_note() -> None:
         before = await images()
-        await page.locator(f"{PANEL} [data-edit='g_clean']").click()
+        await _goto(page, instance, "guests/list?key=g_clean")
         await page.locator(f"{PANEL} input[type=file]").set_input_files(
             {"name": "c.png", "mimeType": "image/png", "buffer": _avatar("C", (163, 190, 140))}
         )
         await page.locator(f"{PANEL} .media img.avatar").wait_for()
         await page.get_by_role("textbox", name="Note").fill("Key is in the mailbox")
-        await page.get_by_role("button", name="Save").click()
-        await _list(page)
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
 
         async def saved() -> bool:
             guest = _guest(await _snapshot(api, instance), "g_clean")
@@ -1020,7 +1138,8 @@ async def check_page(
         guest = _guest(await _snapshot(api, instance), "g_clean")
         assert guest is not None
         expect(await images() == before | {guest["picture"]}, "an image too many or too few")
-        await page.locator(f"{PANEL} [data-edit='g_clean'] img.photo").wait_for()
+        await _goto(page, instance, "guests/list")
+        await page.locator(f"{PANEL} .item[data-key='g_clean'] img.lead").wait_for()
         state = await api.ws(instance.token, {"type": "get_states"})
         pictures = {
             item["entity_id"]: item["attributes"].get("entity_picture")
@@ -1037,24 +1156,59 @@ async def check_page(
 
     await checks.run("a photo and a note reach the integration and the dashboards", photo_and_note)
 
-    async def cancelled_upload_leaves_nothing() -> None:
+    async def left_upload_leaves_nothing() -> None:
         before = await images()
-        await page.locator(f"{PANEL} [data-edit='g_grandma']").click()
+        await _goto(page, instance, "guests/list?key=g_grandma")
         await page.locator(f"{PANEL} input[type=file]").set_input_files(
             {"name": "g.png", "mimeType": "image/png", "buffer": _avatar("G", (180, 142, 173))}
         )
         await page.locator(f"{PANEL} .media img.avatar").wait_for()
         expect(len(await images()) == len(before) + 1, "the upload did not arrive")
-        await page.get_by_role("button", name="Cancel").click()
-        await _list(page)
+        await page.locator(PANEL).evaluate(
+            "el => el.shadowRoot.getElementById('frame').shadowRoot"
+            ".querySelector('ha-icon-button-arrow-prev').click()"
+        )
+        await page.locator(ROW).first.wait_for()
 
         async def cleaned() -> bool:
             return await images() == before
 
-        await _until(cleaned, "the cancelled upload to be deleted")
+        await _until(cleaned, "the upload not saved to be deleted")
 
     await checks.run(
-        "a photo uploaded and then cancelled is deleted again", cancelled_upload_leaves_nothing
+        "a photo uploaded and the guest left without saving is deleted again",
+        left_upload_leaves_nothing,
+    )
+
+    async def numbers_in_the_language() -> None:
+        # A German page writes numbers as elsewhere in German, and takes a comma back
+        anna = _guest(await _snapshot(api, instance), "g_anna")
+        assert anna is not None
+        odd = next((v for v in anna["log"]["visits"][:10] if v["minutes"] % 60), None)
+        await page.evaluate("localStorage.setItem('selectedLanguage', JSON.stringify('de'))")
+        try:
+            await _goto(page, instance, "guests/list?key=g_anna&view=log")
+            await page.get_by_text("Besuch läuft seit", exact=False).first.wait_for()
+            if odd is not None:
+                hours = f"{odd['minutes'] / 60:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+                text = await page.locator(f"{PANEL} .visits").inner_text()
+                expect(f"{hours} h" in text, f"{hours} h not in {text!r}")
+            await _goto(page, instance, "setup/timings")
+            grid = page.get_by_role("textbox", name="Raster des Besuchsprotokolls")
+            await grid.wait_for()
+            expect(await grid.input_value() == "15", await grid.input_value())
+            await grid.fill("20,0")
+            await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
+
+            async def saved() -> bool:
+                return bool((await _snapshot(api, instance))["settings"]["log_grid_minutes"] == 20)
+
+            await _until(saved, "20,0 saved as 20")
+        finally:
+            await page.evaluate("localStorage.setItem('selectedLanguage', JSON.stringify('en'))")
+
+    await checks.run(
+        "German: numbers in the number format, a comma typed into a field", numbers_in_the_language
     )
 
     async def phone_and_dark() -> None:
@@ -1066,37 +1220,32 @@ async def check_page(
                 viewport={"width": 390, "height": 844},
                 color_scheme=scheme,
             )
-            await _list(phone)
+            await _goto(phone, instance, "guests/list")
+            info = await _frame(phone, sub=False)
+            expect(info["bottom"], f"{scheme}: the areas are not at the bottom")
             overflow = await phone.evaluate(
                 "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
             )
             expect(overflow <= 0, f"{scheme}: page scrolls sideways by {overflow} px")
-            await _header(phone, phone=True)
-            # The tabs at the bottom work as at desktop width
-            await phone.locator(f"{PANEL} #tabs .tab", has_text="Rooms").click()
-            await _rooms_tab(phone)
-            expect(phone.url.endswith("/guest-access/rooms"), f"{scheme}: Rooms at {phone.url}")
-            await phone.locator(f"{PANEL} #tabs .tab", has_text="Guests").click()
-            await _list(phone)
-            # No hover highlight in the picture
-            await phone.mouse.move(0, 0)
             expect(
                 not await phone.locator(f"{PANEL} #stamp").is_visible(),
                 f"{scheme}: the stamp shows on phone width",
             )
             for button in ("refresh", "integration"):
                 expect(
-                    await phone.locator(f"{PANEL} #{button}").is_visible(),
+                    await phone.locator(f"{PANEL} ha-icon-button#{button}").is_visible(),
                     f"{scheme}: {button} button missing on phone width",
                 )
             if shots is not None and scheme == "dark":
+                await _settle(phone)
                 await phone.screenshot(path=str(shots / "phone-dark.png"))
-            await phone.locator(f"{PANEL} [data-edit='g_anna']").click()
-            await phone.get_by_text("Visit log", exact=True).wait_for()
-            overflow = await phone.evaluate(
-                "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
-            )
-            expect(overflow <= 0, f"{scheme}: form scrolls sideways by {overflow} px")
+            for path in ("guests/list?key=g_anna", "setup/timings"):
+                await _goto(phone, instance, path)
+                overflow = await phone.evaluate(
+                    "() => document.documentElement.scrollWidth"
+                    " - document.documentElement.clientWidth"
+                )
+                expect(overflow <= 0, f"{scheme} {path}: scrolls sideways by {overflow} px")
             background = await phone.locator(PANEL).evaluate(
                 "el => getComputedStyle(el).backgroundColor"
             )
@@ -1105,13 +1254,11 @@ async def check_page(
                     int(part) for part in background[background.index("(") + 1 : -1].split(",")[:3]
                 ]
                 expect(sum(channels) < 200, f"dark mode background is {background}")
-            if instance.directory.exists():
-                await phone.screenshot(path=str(instance.directory / f"phone-{scheme}.png"))
             SENT.pop(phone, None)
             await _close(phone)
 
     await checks.run(
-        "phone width and dark mode: no sideways scrolling, dark background", phone_and_dark
+        "phone width and dark mode: areas at the bottom, no sideways scrolling", phone_and_dark
     )
 
     async def recovers_once_loaded() -> None:
@@ -1128,12 +1275,17 @@ async def check_page(
 
         await entry("user")
         try:
-            await page.goto(f"{instance.base}/guest-access")
-            await page.locator(f"{PANEL} ha-alert[alert-type='error']").wait_for(timeout=30000)
+            await page.goto(f"{instance.base}/guest-access/guests/list")
+            alert = page.locator(
+                f"{PANEL} ha-alert[alert-type='error']", has_text="Guest Access is not set up."
+            )
+            await alert.wait_for(timeout=30000)
+            said = await alert.locator("ha-tooltip").evaluate("el => el.textContent")
+            expect(said.strip().startswith("Message: "), said)
         finally:
             await entry(None)
         # The page subscribes again by itself, without a reload
-        await page.locator(f"{PANEL} [data-edit]").first.wait_for(timeout=30000)
+        await page.locator(ROW).first.wait_for(timeout=30000)
         expect(
             await page.locator(f"{PANEL} ha-alert[alert-type='error']").count() == 0,
             "the error stays after loading",
@@ -1154,6 +1306,30 @@ async def check_page(
 
     await checks.run(
         "users without administrator rights get neither page nor commands", no_page_for_users
+    )
+
+    async def starts_at_setup() -> None:
+        # Last, as it empties the made-up home: with nothing set up the page starts at the setup
+        for guest in (await _snapshot(api, instance))["guests"]:
+            reply = await api.ws(
+                instance.token, {"type": "guest_access/delete_guest", "guest_id": guest["id"]}
+            )
+            expect(reply["success"], str(reply))
+        reply = await api.ws(
+            instance.token, {"type": "guest_access/save_settings", "residents": [], "rooms": []}
+        )
+        expect(reply["success"], str(reply))
+        await page.goto(f"{instance.base}/guest-access")
+        await page.wait_for_url("**/guest-access/setup/overview")
+        await _ready(page)
+        expect(await page.locator(f"{PANEL} .lead.step.done").count() == 0, "a step done")
+        await page.locator(f"{PANEL} ha-button#next").click()
+        await page.wait_for_url("**/guest-access/setup/residents")
+
+    checks.before = None
+    await checks.run(
+        "with nothing set up the page starts at the setup overview, Continue leads on",
+        starts_at_setup,
     )
     await _close(page)
 

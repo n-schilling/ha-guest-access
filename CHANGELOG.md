@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-11-17
+
+### Changed
+
+- The page is built in Home Assistant's own frame, as its settings pages are, with two areas as tabs in the header (at the bottom on a phone): Guests (`/guest-access/guests/list`) and Setup with the pages Overview, Residents, Rooms and Timings (`/guest-access/setup/…`). A guest is a subpage with back arrow and name (`?key=<guest>`, a new one `?key=new`) and the views Guest, Approval, Rooms and time, Visit log as tabs (`&view=`). The old addresses `/guest-access/guests` and `/guest-access/rooms` lead to their new places; opened without an address the page starts at the guests, or at the setup overview while nothing is set up.
+- The setup overview lists the steps (residents, lockable rooms, guests) with their state and leads to the first open one; the version line moved there.
+- Settings are Home Assistant's settings rows, their explanations behind an (i) instead of helper texts; one save button shows only while something differs from what is saved, on a guest as on the setup pages. The confirmation of lock and delete stays in the page.
+- Numbers (grace time, time per visit, timings, hours of the visit log) are written in the number format of the user's profile; the number fields take a point or a comma.
+- An error reads one line by its kind (not set up, gone meanwhile, input does not fit, needs an administrator, otherwise "That did not work"), Home Assistant's message behind the (i); the photo upload's HTTP answers read the same.
+- The room lock shows as one line on the guests, its reason behind the (i).
+- The header's button to Home Assistant's page of the integration is labelled "Integration in Home Assistant". The page uses only elements Home Assistant defines on a custom panel, icons as MDI paths, and the language of the user's profile.
+
+### Added
+
+- A test that both languages of the page have the same text keys, each once.
+- The page check tests the frame and its areas on every page and subpage, old addresses and a change of the query alone, the setup overview and the start there with nothing set up, settings rows with their (i) and the save button, errors with the message behind the (i), numbers in German, and phone width with the areas at the bottom. Screenshots refreshed, two added (rooms, timings).
+
 ## [0.6.0] - 2026-11-11
 
 ### Changed

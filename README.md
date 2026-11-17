@@ -20,13 +20,19 @@ The guests with their state and approval, made up for these pictures:
 
 <img src="docs/screenshots/guests.png" alt="List of guests: two count as home, one is locked, two are away" width="700">
 
-A guest's form: a key tag as tracker, photo and note, the approval with two weekly time windows:
+A guest's approval: once until, permanent until or permanent, the grace time and two weekly time windows:
 
-<img src="docs/screenshots/guest.png" alt="Form of a guest: name, trackers, photo and note, approval, grace time and time windows" width="700">
+<img src="docs/screenshots/guest.png" alt="A guest's approval: kind, grace time and two weekly time windows" width="700">
 
 The visit log of a guest, on a 15-minute grid, with monthly totals and a CSV export:
 
 <img src="docs/screenshots/visit-log.png" alt="Visit log: running visit, totals of this and last month, single visits" width="700">
+
+The setup: the lockable rooms, each an area with its door contact, and the timings with the save button shown while a value is changed:
+
+<img src="docs/screenshots/rooms.png" alt="Lockable rooms: three areas, each with its door contact" width="700">
+
+<img src="docs/screenshots/settings.png" alt="Timings: resume time, grid of the visit log, how long visits and totals are kept" width="700">
 
 The list at phone width in dark mode:
 
@@ -196,7 +202,7 @@ For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a 
 
 ### Settings
 
-On the page, tab "Rooms", "Edit":
+On the page, area "Setup", pages Residents, Rooms and Timings:
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -239,9 +245,18 @@ Once Home Assistant has started, Guest Access opens a repair issue for every tra
 
 ### Page
 
-A sidebar page for administrators only, in English and German, with two tabs: "Guests" lists the guests with photo and state, a "lock now" button that sets the approval to `off`, and "Add guest"; "Rooms" shows the residents, the lockable rooms and whether the room lock is on, with "Edit" for residents, rooms and timings. A guest opens as a subpage with a back arrow: trackers, photo and note, approval and time windows, rooms and time, visit log. The tab is in the URL (`/guest-access/guests`, `/guest-access/rooms`), so a reload and the browser's back button keep it. At the bottom: the version and, when deployed with `scripts/deploy.sh`, the commit.
+A sidebar page for administrators only, in the language of the user's profile (English or German), built in Home Assistant's own frame with two areas as tabs in the header (at the bottom on a phone):
 
-The header is one row, as on Nico's other apps and integrations: the integration's icon, its name and the tabs, then when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a settings button to Home Assistant's page of the integration. At phone width the tabs move to the bottom of the screen. A subpage shows the back arrow and its title in place of icon, name and tabs. Non-administrators get no page.
+| Area | Page | Address | Content |
+|---|---|---|---|
+| Guests | Guests | `/guest-access/guests/list` | the guests with photo and state, a "lock" button that sets the approval to `off` after asking, "Add guest", and the room lock in one line |
+| | a guest | `…/guests/list?key=<guest>` (new: `?key=new`), view `&view=details\|approval\|rooms\|log` | a subpage with back arrow and the guest's name; views Guest (name, trackers, photo and note), Approval (kind, end, grace time, time windows), Rooms and time, Visit log |
+| Setup | Overview | `/guest-access/setup/overview` | the steps (residents, lockable rooms, guests) with their state, "Continue" to the first open one, the version and, when deployed with `scripts/deploy.sh`, the commit |
+| | Residents, Rooms, Timings | `/guest-access/setup/residents`, `…/rooms`, `…/timings` | the settings |
+
+Settings are rows with their explanation behind an (i); one save button shows at the bottom right while something differs from what is saved, on a guest as on the setup pages. Numbers follow the number format of the profile, and a number field takes a point or a comma. An error reads one line by its kind, Home Assistant's message behind the (i). Opened without an address the page shows the guests, or the setup overview while nothing is set up; the addresses of before 0.7 (`/guest-access/guests`, `/guest-access/rooms`) lead to their new places.
+
+At the end of the header: when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a button to Home Assistant's page of the integration. Non-administrators get no page.
 
 ### State
 
@@ -414,7 +429,7 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, the page checks and hassfest in Docker. The page check is not part of CI: run `scripts/check.sh` before a release that changes the page.
 
-The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (header with icon and tabs, the tab in the URL, list, form, visit log, lock, rename, photo and note, errors, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
+The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (Home Assistant's frame with its areas and tabs on every page, old addresses and the query in the address, the setup overview, settings rows with their (i) and the save button, list, guest views, visit log, lock, rename, photo and note, errors, numbers in German, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
 
 ```bash
 uv venv --python 3.14 .venv-panel && uv pip install --python .venv-panel/bin/python -r requirements_panel.txt
