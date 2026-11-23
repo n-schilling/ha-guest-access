@@ -45,6 +45,19 @@ jobs:
           persist-credentials: false
       - uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361 # master 2026-10-26
 
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    # Validates the repository for the Marketplace catalog. The HACS action
+    # validates public repositories only; compared with false on purpose: an
+    # event without a repository object (a scheduled run) must skip it as well
+    if: ${{ github.event.repository.private == false }}
+    steps:
+      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a # 22.5.0
+        with:
+          # No ignored checks: the Marketplace catalog accepts none
+          category: integration
+
   test:
     name: Tests
     runs-on: ubuntu-latest
