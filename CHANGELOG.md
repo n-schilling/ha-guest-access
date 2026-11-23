@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] - 2026-11-23
+
+### Changed
+
+- The repository is validated by the HACS action in CI, without a skipped check. Nothing changes in the integration itself.
+
 ## [0.7.1] - 2026-11-17
 
 ### Fixed
