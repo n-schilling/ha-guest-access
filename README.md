@@ -409,21 +409,27 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ## Installation
 
-Requires Home Assistant 2026.11 or later. There are no requirements outside Home Assistant.
+Guest Access is part of the official catalog of the [Home Assistant Marketplace](https://www.home-assistant.io/integrations/marketplace/): you find it there by its name, with nothing to add first. There are two ways to install it, and each one is complete in itself. Both need Home Assistant 2026.11 or later and nothing outside Home Assistant.
 
 ### Easy installation
 
-1. **Settings → Marketplace → Browse**, search for **Guest Access**, install it and restart Home Assistant.
-2. **Settings → Devices & services → Add integration → Guest Access.**
-3. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
+Through the search in the Marketplace, the way for almost everyone.
+
+1. Open **Settings → Marketplace** and search for **Guest Access**.
+2. Install it and restart Home Assistant.
+3. **Settings → Devices & services → Add integration → Guest Access.**
+4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
 ### Alternative installation
 
-If the search does not find the integration, add the repository by link: **Settings → Marketplace → Add from link** (top right), enter `https://github.com/n-schilling/ha-guest-access` as GitHub link and add it. Adding a repository by link asks you to connect GitHub once. Then install **Guest Access** in the Marketplace and restart Home Assistant.
+By the link of the repository, if the search does not show Guest Access.
 
-Without the Marketplace, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart.
+1. Open **Settings → Marketplace → Add from link** (top right), enter `https://github.com/n-schilling/ha-guest-access` as GitHub link and add it. This asks you to connect GitHub once.
+2. Install **Guest Access** and restart Home Assistant.
+3. **Settings → Devices & services → Add integration → Guest Access.**
+4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
-Either way, continue with step 2 of the easy installation.
+Without the Marketplace at all, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart instead of steps 1 and 2.
 
 ### Removal
 
