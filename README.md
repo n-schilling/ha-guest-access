@@ -442,7 +442,7 @@ Without the Marketplace, by copying the files yourself. Home Assistant then does
 
 ### Removal
 
-**Settings → Devices & services → Guest Access → ⋮ → Delete** removes the guests, their devices and entities, the visit log and the page. Then remove the integration in the Marketplace and restart.
+**Settings → Devices & services → Guest Access → ⋮ → Delete** removes the guests, their devices and entities, the visit log and the page. Then remove the integration in the Marketplace and restart. After a fully manual installation, delete the folder `custom_components/guest_access` instead and restart.
 
 ## Development
 
