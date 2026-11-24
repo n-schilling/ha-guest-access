@@ -409,7 +409,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ## Installation
 
-Guest Access is part of the official catalog of the [Home Assistant Marketplace](https://www.home-assistant.io/integrations/marketplace/): you find it there by its name, with nothing to add first. There are two ways to install it, and each one is complete in itself. Both need Home Assistant 2026.11 or later and nothing outside Home Assistant.
+Guest Access is part of the official catalog of the [Home Assistant Marketplace](https://www.home-assistant.io/integrations/marketplace/): you find it there by its name, with nothing to add first. There are three ways to install it, and each one is complete in itself. Both need Home Assistant 2026.11 or later and nothing outside Home Assistant.
 
 ### Easy installation
 
@@ -429,7 +429,16 @@ By the link of the repository, if the search does not show Guest Access.
 3. **Settings → Devices & services → Add integration → Guest Access.**
 4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
-Without the Marketplace at all, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart instead of steps 1 and 2.
+### Fully manual installation
+
+Without the Marketplace, by copying the files yourself. Home Assistant then does not tell you about new versions: to update, repeat steps 1 to 4 with the newer release.
+
+1. Open the [latest release](https://github.com/n-schilling/ha-guest-access/releases/latest) and download **Source code (zip)**.
+2. Unpack it. Inside is the folder `custom_components/guest_access`.
+3. Copy the folder `guest_access` into the `custom_components` folder of your configuration directory, the one that holds `configuration.yaml`, so that it ends up as `custom_components/guest_access`. Create `custom_components` if it does not exist yet.
+4. Restart Home Assistant.
+5. **Settings → Devices & services → Add integration → Guest Access.**
+6. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
 ### Removal
 
