@@ -409,7 +409,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ## Installation
 
-Guest Access is part of the official catalog of the [Home Assistant Marketplace](https://www.home-assistant.io/integrations/marketplace/): you find it there by its name, with nothing to add first. There are three ways to install it, and each one is complete in itself. Both need Home Assistant 2026.11 or later and nothing outside Home Assistant.
+Guest Access is part of the official catalog of the [Home Assistant Marketplace](https://www.home-assistant.io/integrations/marketplace/): you find it there by its name, with nothing to add first. There are three ways to install it, and each one is complete in itself. All need Home Assistant 2026.11 or later and nothing outside Home Assistant.
 
 ### Easy installation
 
