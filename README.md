@@ -1,6 +1,6 @@
 # Guest Access
 
-[![Marketplace: custom](https://img.shields.io/badge/Marketplace-custom-41BDF5.svg)](#installation)
+[![Marketplace: default](https://img.shields.io/badge/Marketplace-default-41BDF5.svg)](#installation)
 
 A Home Assistant integration to manage guests without making them persons in Home Assistant. Each guest has a profile: any number of trackers, an approval with a validity and optional time windows, the rooms the guest may enter, the time per visit and, if wanted, a visit log. Guest Access tells Home Assistant which guests count as home, whether only guests are home and what happens to each guest; your automations decide what follows, from greeting a guest with light to an alarm system that treats approved guests like residents.
 
@@ -409,12 +409,11 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ## Installation
 
-1. **Settings → Marketplace → Add from link** (top right), enter `https://github.com/n-schilling/ha-guest-access` as GitHub link and add it. Adding a repository by link asks you to connect GitHub once.
-2. Install **Guest Access** in the Marketplace and restart Home Assistant.
-3. **Settings → Devices & services → Add integration → Guest Access.**
-4. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
+1. **Settings → Marketplace → Browse**, search for **Guest Access**, install it and restart Home Assistant.
+2. **Settings → Devices & services → Add integration → Guest Access.**
+3. Open **Guest Access** in the sidebar, set residents and rooms, and add the first guest.
 
-Requires Home Assistant 2026.11 or later. Without the Marketplace, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart. There are no requirements outside Home Assistant.
+Requires Home Assistant 2026.11 or later. If the search does not find it, add the repository by link: **Settings → Marketplace → Add from link** (top right), enter `https://github.com/n-schilling/ha-guest-access` as GitHub link and add it; this asks you to connect GitHub once. Without the Marketplace, copy `custom_components/guest_access` into the `custom_components` folder of your configuration directory and restart. There are no requirements outside Home Assistant.
 
 ### Removal
 
