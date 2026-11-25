@@ -12,7 +12,14 @@ import uuid
 
 from homeassistant.components.image_upload import DOMAIN as IMAGE_UPLOAD_DOMAIN
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_HOME, STATE_OFF, STATE_ON, Platform
+from homeassistant.const import (
+    STATE_HOME,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+)
 from homeassistant.core import (
     CALLBACK_TYPE,
     Context,
@@ -44,6 +51,7 @@ from .const import (
     PICTURE_UNUSED_KEEP,
     SIGNAL_CHANGED,
     STORAGE_KEY,
+    STORAGE_MINOR_VERSION,
     STORAGE_VERSION,
 )
 from .issues import async_update_issues
@@ -76,6 +84,20 @@ SAVE_DELAY = 1
 QUEUE_LIMIT = 10
 
 
+class GuestStore(Store[dict[str, Any]]):
+    """The store, with the migration from the minor version before."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        if old_major_version == 1 and old_minor_version < 2:
+            # A lockable room had one door contact
+            for room in old_data.get("settings", {}).get("rooms", []):
+                if "doors" not in room and "door" in room:
+                    room["doors"] = [room.pop("door")]
+        return old_data
+
+
 class GuestEngine:
     """The guests, their state and the room lock of one config entry."""
 
@@ -84,17 +106,22 @@ class GuestEngine:
         self.hass = hass
         self.entry = entry
         self.data = AccessData()
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._store = GuestStore(
+            hass, STORAGE_VERSION, STORAGE_KEY, minor_version=STORAGE_MINOR_VERSION
+        )
         self._listeners: list[CALLBACK_TYPE] = []
         # Per guest id, None for the room violation
         self._event_listeners: dict[str | None, list[EventListener]] = {}
         self._queued: dict[str | None, list[tuple[str, dict[str, Any], Context | None]]] = {}
-        # For the events of every guest
+        # For the events of every guest; raised before the first listener, they wait
         self._guest_event_listeners: list[EventListener] = []
+        self._queued_guest_events: list[tuple[str, str, dict[str, Any], Context | None]] = []
         self._unsub_states: CALLBACK_TYPE | None = None
         self._unsub_wake: CALLBACK_TYPE | None = None
         self._unsub_other: list[CALLBACK_TYPE] = []
         self._issues_active = False
+        # Home Assistant has started: the entities of other integrations are there
+        self._started = False
         # What the last evaluation observed
         self._observed: Observed | None = None
         # Door contact: its last real state, on or off
@@ -146,7 +173,10 @@ class GuestEngine:
         @callback
         def _started(_hass: HomeAssistant) -> None:
             self._issues_active = True
+            self._started = True
             self._check_issues()
+            # What is unreachable shows from now on
+            self._evaluate()
 
         @callback
         def _device_changed(event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
@@ -223,8 +253,15 @@ class GuestEngine:
 
     @callback
     def async_add_guest_event_listener(self, listener: EventListener) -> CALLBACK_TYPE:
-        """Call the listener for the events of every guest, as they happen."""
+        """Call the listener for the events of every guest.
+
+        Events raised before the first listener was there, as by the evaluation
+        at the start, reach it now.
+        """
         self._guest_event_listeners.append(listener)
+        queued, self._queued_guest_events = self._queued_guest_events, []
+        for guest_id, event_type, data, context in queued:
+            listener(guest_id, event_type, data, context)
         return lambda: self._guest_event_listeners.remove(listener)
 
     def _notify(self) -> None:
@@ -240,6 +277,9 @@ class GuestEngine:
         context: Context | None = None,
     ) -> None:
         if guest_id is not None:
+            if not self._guest_event_listeners:
+                self._queued_guest_events.append((guest_id, event_type, data, context))
+                del self._queued_guest_events[:-QUEUE_LIMIT]
             for listener in list(self._guest_event_listeners):
                 listener(guest_id, event_type, data, context)
         listeners = self._event_listeners.get(guest_id)
@@ -267,21 +307,56 @@ class GuestEngine:
             },
             residents_home=any(self._is(person, STATE_HOME) for person in settings.residents),
             open_doors=frozenset(
-                room.area_id for room in settings.rooms if self._is(room.door, STATE_ON)
+                room.area_id
+                for room in settings.rooms
+                if any(self._is(door, STATE_ON) for door in room.doors)
+            ),
+            unreachable=frozenset(self.unreachable()),
+            unseen=frozenset(
+                guest.id
+                for guest in self.data.guests.values()
+                if not any(self._reports(tracker) for tracker in guest.trackers)
             ),
         )
+
+    def _reports(self, entity_id: str) -> bool:
+        """Whether the entity has a real state: there, not unknown and not unavailable."""
+        current = self.hass.states.get(entity_id)
+        return current is not None and current.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+    def _watched(self) -> set[str]:
+        """The trackers, residents and door contacts that are configured now."""
+        settings = self.data.settings
+        entities = {tracker for guest in self.data.guests.values() for tracker in guest.trackers}
+        entities.update(settings.residents)
+        entities.update(door for room in settings.rooms for door in room.doors)
+        return entities
+
+    def _unreachable(self, entity_id: str) -> bool:
+        """Unavailable or without a state: Guest Access cannot see what it reports."""
+        current = self.hass.states.get(entity_id)
+        return current is None or current.state == STATE_UNAVAILABLE
+
+    def unreachable(self) -> list[str]:
+        """The configured entities Guest Access cannot see right now, sorted.
+
+        None while Home Assistant starts: the entities of other integrations are
+        not there yet, which is no problem to report.
+        """
+        if not self._started:
+            return []
+        return sorted(e for e in self._watched() if self._unreachable(e))
 
     def _watch(self) -> None:
         """Follow the trackers, the residents and the doors that are configured now."""
         if self._unsub_states is not None:
             self._unsub_states()
         settings = self.data.settings
-        entities = {tracker for guest in self.data.guests.values() for tracker in guest.trackers}
-        entities.update(settings.residents)
-        entities.update(room.door for room in settings.rooms)
-        for room in settings.rooms:
-            if (current := self.hass.states.get(room.door)) is not None:
-                self._remember_door(room.door, current.state)
+        entities = self._watched()
+        doors = {door for room in settings.rooms for door in room.doors}
+        for door in doors:
+            if (current := self.hass.states.get(door)) is not None:
+                self._remember_door(door, current.state)
         self._unsub_states = async_track_state_change_event(
             self.hass, sorted(entities), self._state_changed
         )
@@ -305,7 +380,11 @@ class GuestEngine:
             self._check_issues()
 
     def _check_door(self, event: Event[EventStateChangedData]) -> None:
-        """Raise a room violation when the door of a locked room opens."""
+        """Raise a room violation when a door of a locked room opens.
+
+        Any door of the room counts; a door between two locked rooms raises one
+        violation for each.
+        """
         new = event.data["new_state"]
         entity_id = event.data["entity_id"]
         if new is None:
@@ -317,23 +396,21 @@ class GuestEngine:
         self._remember_door(entity_id, new.state)
         if new.state != STATE_ON or was != STATE_OFF:
             return
-        room = next(
-            (room for room in self.data.settings.rooms if room.door == entity_id),
-            None,
-        )
-        if room is None or room.area_id not in locked_rooms(self.data):
-            return
-        area = ar.async_get(self.hass).async_get_area(room.area_id)
-        self._raise(
-            None,
-            EVENT_OPENED,
-            {
-                "area_id": room.area_id,
-                "area": room.area_id if area is None else area.name,
-                "door": room.door,
-                "guests": [self.display_name(guest) for guest in counting_guests(self.data)],
-            },
-        )
+        locked = locked_rooms(self.data)
+        for room in self.data.settings.rooms:
+            if entity_id not in room.doors or room.area_id not in locked:
+                continue
+            area = ar.async_get(self.hass).async_get_area(room.area_id)
+            self._raise(
+                None,
+                EVENT_OPENED,
+                {
+                    "area_id": room.area_id,
+                    "area": room.area_id if area is None else area.name,
+                    "door": entity_id,
+                    "guests": [self.display_name(guest) for guest in counting_guests(self.data)],
+                },
+            )
 
     # Evaluation
 
@@ -658,11 +735,12 @@ class GuestEngine:
         lock = self.data.lock
         if lock.active:
             # A room that becomes lockable during the lock is treated like one at its
-            # start: free for this lock when its door is open now
+            # start: free for this lock when one of its doors is open now
             opened = {
                 room.area_id
                 for room in settings.rooms
-                if room.area_id not in before and self._is(room.door, STATE_ON)
+                if room.area_id not in before
+                and any(self._is(door, STATE_ON) for door in room.doors)
             }
             self.data.lock = replace(lock, exempt=(lock.exempt | opened) & configured)
         for guest in list(self.data.guests.values()):

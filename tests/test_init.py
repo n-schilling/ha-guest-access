@@ -247,6 +247,294 @@ async def test_new_guest_gets_entities(hass: HomeAssistant, entry: MockConfigEnt
     assert engine.area_name("gone") == "gone"
 
 
+async def test_room_with_several_doors(
+    hass: HomeAssistant, entry: MockConfigEntry, bedroom: str
+) -> None:
+    """Any door of a locked room raises a violation; a door between two rooms one for each."""
+    from custom_components.guest_access.model import Room, Settings
+
+    office = ar.async_get(hass).async_create("Office").id
+    terrace, between = "binary_sensor.bedroom_terrace", "binary_sensor.bedroom_office"
+    seen: list[tuple[str, str]] = []
+
+    @callback
+    def _seen(event: Event[EventStateChangedData]) -> None:
+        new = event.data["new_state"]
+        assert new is not None
+        seen.append((new.attributes["area"], new.attributes["door"]))
+
+    async_track_state_change_event(hass, VIOLATION, _seen)
+    for door in (terrace, between):
+        hass.states.async_set(door, "off")
+    engine_of(entry).async_save_settings(
+        Settings(
+            (RESIDENT,),
+            (Room(bedroom, (DOOR, terrace, between)), Room(office, (between,))),
+        )
+    )
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert attr(hass, GUESTS_HOME, "locked_rooms") == ["Bedroom", "Office"]
+
+    hass.states.async_set(terrace, "on")
+    await hass.async_block_till_done()
+    assert seen == [("Bedroom", terrace)]
+    hass.states.async_set(between, "on")
+    await hass.async_block_till_done()
+    assert seen[1:] == [("Bedroom", between), ("Office", between)]
+
+    # A new lock starts with a door of the bedroom open: free for this lock, the office not
+    hass.states.async_set(TRACKER, "not_home")
+    hass.states.async_set(between, "off")
+    await hass.async_block_till_done()
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert attr(hass, GUESTS_HOME, "locked_rooms") == ["Office"]
+    assert attr(hass, "binary_sensor.guest_access_bedroom_locked", "reason") == "open_at_start"
+    assert attr(hass, "binary_sensor.guest_access_office_locked", "reason") == "locked"
+
+
+async def test_approved_follows_the_approval(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """ "Approved" is on while the approval applies, home or not, through end and time window."""
+    from dataclasses import replace
+    from datetime import time
+
+    from custom_components.guest_access.model import Approval, ApprovalKind, Window
+
+    approved = "binary_sensor.guest_anna_approved"
+    engine = engine_of(entry)
+    assert state(hass, approved) == STATE_ON
+    assert state(hass, COUNTS) == STATE_OFF
+
+    # An end: off once it has passed, without anything else happening
+    until = dt_util.utcnow() + timedelta(minutes=10)
+    engine.async_save_guest(
+        replace(engine.data.guests["anna"], approval=Approval(ApprovalKind.UNTIL, until))
+    )
+    await hass.async_block_till_done()
+    assert state(hass, approved) == STATE_ON
+    freezer.tick(timedelta(minutes=11))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert state(hass, approved) == STATE_OFF
+
+    # A time window that opens in an hour and lasts an hour
+    now = dt_util.now()
+    start, end = now + timedelta(hours=1), now + timedelta(hours=2)
+    window = Window(frozenset(range(7)), time(start.hour, start.minute), time(end.hour, end.minute))
+    engine.async_save_guest(
+        replace(
+            engine.data.guests["anna"],
+            approval=Approval(ApprovalKind.PERMANENT, None, (window,)),
+        )
+    )
+    await hass.async_block_till_done()
+    assert state(hass, approved) == STATE_OFF
+    freezer.tick(timedelta(minutes=61))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert state(hass, approved) == STATE_ON
+    freezer.tick(timedelta(minutes=60))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert state(hass, approved) == STATE_OFF
+
+    engine.async_lock_guest("anna", None, "Admin")
+    await hass.async_block_till_done()
+    assert state(hass, approved) == STATE_OFF
+
+
+async def test_approval_end_and_guest_count(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """ "Approval ends" carries the end of an approval that has one; the hub counts the guests."""
+    from dataclasses import replace
+
+    from custom_components.guest_access.model import Approval, ApprovalKind, Guest
+
+    ends, count = "sensor.guest_anna_approval_ends", "sensor.guest_access_number_of_guests_home"
+    engine = engine_of(entry)
+    assert state(hass, ends) == STATE_UNKNOWN
+    assert state(hass, count) == "0"
+    until = (dt_util.utcnow() + timedelta(days=2)).replace(microsecond=0)
+    for kind in (ApprovalKind.UNTIL, ApprovalKind.ONCE):
+        engine.async_save_guest(replace(engine.data.guests["anna"], approval=Approval(kind, until)))
+        await hass.async_block_till_done()
+        assert state(hass, ends) == until.isoformat()
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert state(hass, count) == "1"
+    engine.async_save_guest(
+        Guest("ben", "Ben", ("device_tracker.ben",), Approval(ApprovalKind.PERMANENT))
+    )
+    hass.states.async_set("device_tracker.ben", "home")
+    await hass.async_block_till_done()
+    assert state(hass, count) == "2"
+    assert state(hass, "sensor.guest_ben_approval_ends") == STATE_UNKNOWN
+    engine.async_lock_guest("anna", None, "Admin")
+    await hass.async_block_till_done()
+    assert state(hass, ends) == STATE_UNKNOWN
+    assert state(hass, count) == "1"
+
+
+async def test_unreachable(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """ "Unreachable" is on while a tracker, resident or door contact is unavailable or has no state."""
+    problem = "binary_sensor.guest_access_unreachable"
+    # The guest's tracker has reported nothing yet
+    assert state(hass, problem) == STATE_ON
+    assert attr(hass, problem, "entities") == [TRACKER]
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    assert state(hass, problem) == STATE_OFF
+    assert attr(hass, problem, "entities") == []
+    # A door contact that drops out, with nothing else changing
+    hass.states.async_set(DOOR, "unavailable")
+    hass.states.async_set(RESIDENT, "unavailable")
+    await hass.async_block_till_done()
+    assert state(hass, problem) == STATE_ON
+    assert attr(hass, problem, "entities") == [DOOR, RESIDENT]
+    hass.states.async_set(DOOR, "off")
+    hass.states.async_set(RESIDENT, "unknown")
+    await hass.async_block_till_done()
+    assert state(hass, problem) == STATE_OFF
+
+
+async def test_unreachable_waits_for_the_start(
+    hass: HomeAssistant, hass_storage: dict[str, Any], stored: dict[str, Any]
+) -> None:
+    """While Home Assistant starts, entities that are not there yet are no problem."""
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.guest_access.const import TITLE
+
+    problem = "binary_sensor.guest_access_unreachable"
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 2,
+        "key": STORAGE_KEY,
+        "data": stored,
+    }
+    assert await async_setup_component(hass, "http", {})
+    hass.set_state(CoreState.starting)
+    entry = MockConfigEntry(domain=DOMAIN, title=TITLE)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert state(hass, problem) == STATE_OFF
+    assert attr(hass, problem, "entities") == []
+    hass.states.async_set(RESIDENT, "not_home")
+    hass.states.async_set(DOOR, "unavailable")
+    await hass.async_block_till_done()
+    assert state(hass, problem) == STATE_OFF
+
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert state(hass, problem) == STATE_ON
+    assert attr(hass, problem, "entities") == [DOOR, TRACKER]
+
+
+async def test_not_approved_once_over_a_reload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A guest home without approval is reported once, also when a tracker drops out."""
+    engine_of(entry).async_lock_guest("anna", None, "Admin")
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert attr(hass, ACTIVITY, "event_type") == "arrived_not_approved"
+    first = state(hass, ACTIVITY)
+    hass.states.async_set(TRACKER, "unavailable")
+    await hass.async_block_till_done()
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert state(hass, ACTIVITY) == first
+    hass.states.async_set(TRACKER, "not_home")
+    await hass.async_block_till_done()
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert state(hass, ACTIVITY) != first
+    assert attr(hass, ACTIVITY, "event_type") == "arrived_not_approved"
+
+
+async def test_guest_activity_gets_events_of_the_start(
+    hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """An event raised while the entry loads reaches "Guest activity" as it reaches the guest."""
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    # The visit time runs out while the entry is not loaded
+    freezer.tick(timedelta(minutes=61))
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert attr(hass, ACTIVITY, "event_type") == "time_up"
+    assert attr(hass, GUEST_ACTIVITY, "event_type") == "time_up"
+    assert attr(hass, GUEST_ACTIVITY, "guest") == "Anna"
+
+
+async def test_room_sensor_of_a_room_gone_at_once(
+    hass: HomeAssistant, entry: MockConfigEntry, bedroom: str
+) -> None:
+    """A room made lockable and taken back at once leaves no sensor."""
+    from custom_components.guest_access.model import Room, Settings
+
+    office = ar.async_get(hass).async_create("Office").id
+    engine = engine_of(entry)
+    before = engine.data.settings
+    engine.async_save_settings(
+        Settings((RESIDENT,), (*before.rooms, Room(office, ("binary_sensor.office_door",))))
+    )
+    engine.async_save_settings(before)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.guest_access_office_locked") is None
+    assert er.async_get(hass).async_get("binary_sensor.guest_access_office_locked") is None
+    assert state(hass, "binary_sensor.guest_access_bedroom_locked") == STATE_OFF
+
+
+async def test_room_locked_sensors(
+    hass: HomeAssistant, entry: MockConfigEntry, bedroom: str
+) -> None:
+    """One sensor per lockable room: on while locked, named after the area, gone with the room."""
+    from dataclasses import replace
+
+    from custom_components.guest_access.model import Room, Settings
+
+    locked = "binary_sensor.guest_access_bedroom_locked"
+    assert state(hass, locked) == STATE_OFF
+    assert attr(hass, locked, "area_id") == bedroom
+    assert attr(hass, locked, "reason") == "no_lock"
+    assert attr(hass, locked, "friendly_name") == "Guest Access Bedroom locked"
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert state(hass, locked) == STATE_ON
+    assert attr(hass, locked, "reason") == "locked"
+    engine = engine_of(entry)
+    engine.async_save_guest(replace(engine.data.guests["anna"], rooms=(bedroom,)))
+    await hass.async_block_till_done()
+    assert state(hass, locked) == STATE_OFF
+    assert attr(hass, locked, "reason") == "guest_may_enter"
+    hass.states.async_set(RESIDENT, "home")
+    await hass.async_block_till_done()
+    assert state(hass, locked) == STATE_OFF
+    assert attr(hass, locked, "reason") == "no_lock"
+
+    # The name follows the area, the entity ID stays
+    ar.async_get(hass).async_update(bedroom, name="Main bedroom")
+    await hass.async_block_till_done()
+    assert attr(hass, locked, "friendly_name") == "Guest Access Main bedroom locked"
+
+    # Another room gets its sensor, a room that is no longer lockable loses it
+    office = ar.async_get(hass).async_create("Office").id
+    engine_of(entry).async_save_settings(
+        Settings((RESIDENT,), (Room(office, ("binary_sensor.office_door",)),))
+    )
+    await hass.async_block_till_done()
+    assert state(hass, "binary_sensor.guest_access_office_locked") == STATE_OFF
+    assert hass.states.get(locked) is None
+    assert er.async_get(hass).async_get(locked) is None
+
+
 async def test_guest_activity_of_every_guest(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """One event entity carries the events of every guest, also of one added later."""
     from custom_components.guest_access.model import Approval, ApprovalKind, Guest
@@ -530,7 +818,9 @@ async def test_room_added_during_lock_with_open_door(
     office = ar.async_get(hass).async_create("Office").id
     hass.states.async_set("binary_sensor.office_door", "on")
     engine.async_save_settings(
-        Settings((RESIDENT,), (Room(bedroom, DOOR), Room(office, "binary_sensor.office_door")))
+        Settings(
+            (RESIDENT,), (Room(bedroom, (DOOR,)), Room(office, ("binary_sensor.office_door",)))
+        )
     )
     await hass.async_block_till_done()
     assert office in engine.data.lock.exempt
@@ -540,23 +830,29 @@ async def test_room_added_during_lock_with_open_door(
 async def test_visit_log_sensor_and_off(
     hass: HomeAssistant, entry: MockConfigEntry, freezer: FrozenDateTimeFactory
 ) -> None:
-    """The month's hours follow the finished visits; switching the log off removes it."""
+    """The hours of this and last month follow the visits; switching the log off removes them."""
     from dataclasses import replace
+
+    from custom_components.guest_access.engine import _next_month
 
     engine = engine_of(entry)
     hours = "sensor.guest_anna_hours_this_month"
+    last = "sensor.guest_anna_hours_last_month"
     registry = er.async_get(hass)
-    assert registry.async_get(hours).disabled_by is er.RegistryEntryDisabler.INTEGRATION  # type: ignore[union-attr]
-    registry.async_update_entity(hours, disabled_by=None)
+    for entity_id in (hours, last):
+        assert registry.async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION  # type: ignore[union-attr]
+        registry.async_update_entity(entity_id, disabled_by=None)
     # Home Assistant reloads the entry itself after enabling an entity
     freezer.tick(timedelta(seconds=31))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     engine = engine_of(entry)
     assert state(hass, hours) == STATE_UNKNOWN
+    assert state(hass, last) == STATE_UNKNOWN
     engine.async_save_guest(replace(engine.data.guests["anna"], log_visits=True))
     await hass.async_block_till_done()
     assert state(hass, hours) == "0.0"
+    assert state(hass, last) == "0.0"
     hass.states.async_set(TRACKER, "home")
     await hass.async_block_till_done()
     freezer.tick(timedelta(minutes=90))
@@ -566,9 +862,24 @@ async def test_visit_log_sensor_and_off(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert state(hass, hours) == "1.5"
+    assert state(hass, last) == "0.0"
+    # The month turns: its hours are last month's, the new month starts at nothing
+    freezer.move_to(_next_month(dt_util.utcnow()) + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert state(hass, hours) == "0.0"
+    assert state(hass, last) == "1.5"
+    # Totals kept for the current month only: last month's is not known
+    settings = engine.data.settings
+    engine.async_save_settings(replace(settings, log_keep_months=1))
+    await hass.async_block_till_done()
+    assert state(hass, last) == STATE_UNKNOWN
+    engine.async_save_settings(settings)
+    await hass.async_block_till_done()
     engine.async_save_guest(replace(engine.data.guests["anna"], log_visits=False))
     await hass.async_block_till_done()
     assert state(hass, hours) == STATE_UNKNOWN
+    assert state(hass, last) == STATE_UNKNOWN
     assert engine.data.visits == []
 
 

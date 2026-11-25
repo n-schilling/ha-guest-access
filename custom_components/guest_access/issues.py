@@ -48,14 +48,16 @@ def find_problems(hass: HomeAssistant, data: AccessData) -> dict[str, Problem]:
             problems[f"missing_area_{room.area_id}"] = Problem(
                 "missing_area",
                 ir.IssueSeverity.ERROR,
-                {"area": room.area_id, "entity": room.door},
+                {"area": room.area_id, "entity": ", ".join(room.doors)},
             )
-        elif _missing(hass, room.door):
-            problems[f"missing_door_{room.door}"] = Problem(
-                "missing_door",
-                ir.IssueSeverity.ERROR,
-                {"room": area.name, "entity": room.door},
-            )
+            continue
+        for door in room.doors:
+            if _missing(hass, door):
+                problems[f"missing_door_{room.area_id}_{door}"] = Problem(
+                    "missing_door",
+                    ir.IssueSeverity.ERROR,
+                    {"room": area.name, "entity": door},
+                )
     return problems
 
 

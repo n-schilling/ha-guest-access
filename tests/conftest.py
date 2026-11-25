@@ -28,7 +28,7 @@ def bedroom(hass: HomeAssistant) -> str:
 def stored(bedroom: str) -> dict[str, Any]:
     """What is in storage before the entry loads: Anna, permanent, living area only."""
     return {
-        "settings": {"residents": [RESIDENT], "rooms": [{"area_id": bedroom, "door": DOOR}]},
+        "settings": {"residents": [RESIDENT], "rooms": [{"area_id": bedroom, "doors": [DOOR]}]},
         "guests": [
             {
                 "id": "anna",
@@ -53,7 +53,7 @@ async def entry(
     """The loaded entry, with the stored data in place."""
     hass_storage[STORAGE_KEY] = {
         "version": 1,
-        "minor_version": 1,
+        "minor_version": 2,
         "key": STORAGE_KEY,
         "data": stored,
     }

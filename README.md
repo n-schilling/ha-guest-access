@@ -4,6 +4,8 @@
 
 A Home Assistant integration to manage guests without making them persons in Home Assistant. Each guest has a profile: any number of trackers, an approval with a validity and optional time windows, the rooms the guest may enter, the time per visit and, if wanted, a visit log. Guest Access tells Home Assistant which guests count as home, whether only guests are home and what happens to each guest; your automations decide what follows, from greeting a guest with light to an alarm system that treats approved guests like residents.
 
+Why not simply add a guest as a user or person in Home Assistant? A person simply follows its trackers, with no approval, no end and no time of day, and every automation that looks at persons treats the guest as a resident. A user account on top gives the guest a login to your Home Assistant. Guest Access keeps guests apart from residents: a guest gets no login, counts only while an approval allows it, and loses it at its end or with one tap on the page. Home Assistant can tell "someone is home" from "only guests are home", knows which rooms each guest may enter and how long a visit lasts, and none of this needs a template or a helper.
+
 Guests are managed on a page in the sidebar, for administrators only. No entity can change an approval.
 
 What it is for, for example:
@@ -28,9 +30,9 @@ The visit log of a guest, on a 15-minute grid, with monthly totals and a CSV exp
 
 <img src="docs/screenshots/visit-log.png" alt="Visit log: running visit, totals of this and last month, single visits" width="700">
 
-The setup: the lockable rooms, each an area with its door contact, and the timings with the save button shown while a value is changed:
+The setup: the lockable rooms, each an area with its door contacts, and the timings with the save button shown while a value is changed:
 
-<img src="docs/screenshots/rooms.png" alt="Lockable rooms: three areas, each with its door contact" width="700">
+<img src="docs/screenshots/rooms.png" alt="Lockable rooms: three areas, each with its door contacts and a button to add another" width="700">
 
 <img src="docs/screenshots/settings.png" alt="Timings: resume time, grid of the visit log, how long visits and totals are kept" width="700">
 
@@ -96,6 +98,8 @@ A guest counts while all of these hold:
 
 When no tracker is home any more, the guest stops counting at once (`left`). A return within the grace time continues the same visit: its end stays, no new `arrived` is raised. A return later is a new visit with a new end. Locking the guest or an approval that is no longer valid ends the visit as well; so does any change of the approval while the guest is away, the visit ending when the guest left.
 
+A tracker that comes home while the approval does not let the guest count (off, ended, outside its time windows) makes the guest `not_approved` and raises `arrived_not_approved`, once per arrival.
+
 A `once` approval is one visit: when no tracker of the guest has been home for the grace time, the approval switches to `off`. A guest who returns later needs a new approval.
 
 The status sensor of a guest follows these rules:
@@ -159,7 +163,7 @@ When the visit time of a guest runs out, or the approval ends (its end passes or
 
 ### Room lock
 
-Rooms are set once on the page: each lockable room is a Home Assistant area with exactly one door contact (`binary_sensor`), so names follow the area registry. A room that stops being lockable is removed from every guest. The lock starts when guests count and no resident is home, given as a list of `person` entities on the page. A room is locked while its door is closed, and an opening is a change to open from the last known real state closed (a door opened while its contact was unavailable counts once the contact reports; a contact that returns to a door already open before does not); guests waiting to resume after a restart keep their rooms free unless they were locked; a room whose door is open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more.
+Rooms are set once on the page: each lockable room is a Home Assistant area with the contacts of its doors (`binary_sensor`), so names follow the area registry. A room with several doors, as a walk-through room or a basement room with a second entrance, gets all of them, and any of them opening counts; a door between two lockable rooms belongs to both and raises a violation for each that is locked. A room that stops being lockable is removed from every guest. The lock starts when guests count and no resident is home, given as a list of `person` entities on the page. A room is locked while its doors are closed, and an opening is a change to open from the last known real state closed (a door opened while its contact was unavailable counts once the contact reports; a contact that returns to a door already open before does not); guests waiting to resume after a restart keep their rooms free unless they were locked; a room with a door open when the lock starts stays free for that visit. The lock ends when a resident comes home or no guest counts any more. Each lockable room has a sensor "<room> locked" that tells whether it is locked and, with its attribute `reason`, why or why not.
 
 ```mermaid
 flowchart TD
@@ -181,17 +185,22 @@ Each guest is a device with its entities.
 | Kind | Entity | Purpose |
 |---|---|---|
 | Per guest | `binary_sensor` "<guest> counts" (presence), with the guest's photo as its picture | automations, the guest's state on dashboards |
+| Per guest | `binary_sensor` "<guest> approved" (on while the approval lets the guest count, home or not: not `off`, its end not passed, within its time windows) | what should work only while a guest is welcome: a door code, the guest Wi-Fi |
 | Per guest | `sensor` "<guest> status" (enum: `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive`), with the guest's photo as its picture | dashboards show it as it is, no template; `inactive` (no approval and not home) lets them leave such guests out |
 | Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
-| Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log; disabled by default, see Privacy) | the hours on a dashboard |
-| Per guest | `event` "<guest> activity" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
+| Per guest | `sensor` "<guest> approval ends" (timestamp: the end of a once or permanent-until approval; unknown without an end) | a reminder before an approval runs out |
+| Per guest | `sensor` "<guest> hours this month" and "<guest> hours last month" (hours of the finished visits of that month from the visit log; unknown without a log; disabled by default, see Privacy) | the hours on a dashboard; last month's to settle them at the start of a month |
+| Per guest | `event` "<guest> activity" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) and `arrived_not_approved` (a tracker came home while the approval does not let the guest count) | push and log stay in automations |
 | All guests | `event` "Guest activity": the events of every guest in one entity, with the same types and data plus `guest` (name) and `guest_id` | one trigger for all guests, also for those added later |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms, and `guest_list` (every guest but inactive ones, by name: `name`, `picture`, `status`, `status_entity`, `visit_ends` while the guest counts with time left or time up) | the one entity automations read to treat guests as home; `guest_list` lets a dashboard list the guests without searching the entity registry |
+| Summary | `sensor` "Number of guests home" (how many guests count) | conditions and dashboards that need the number, without a template |
 | Summary | `sensor` "Guests home since" (timestamp: the earliest arrival of the guests who count; unknown while none counts; a restart or a return within the grace time does not move it) | dashboards showing since when guests are home |
 | Room lock | `event` "Room violation" with the type `opened`, carrying the area, the door and the guests who count | push, log and image series stay in automations |
+| Room lock | `binary_sensor` "<room> locked" per lockable room (on while the room is locked), named after the area, with the attributes `area_id` and `reason` (`locked`, `no_lock`, `guest_may_enter`, `open_at_start`) | a lock on the room's door, a light beside it, a dashboard; `open_at_start` tells that a room stayed free because a door was open |
+| Summary | `binary_sensor` "Unreachable" (problem: on while a tracker, resident or door contact is unavailable or has no state), with the attribute `entities` | a warning that the room lock cannot see a door, or that a guest or resident would not be seen coming home |
 
-A new guest's entities get the IDs `guest_<name>_<entity name>`, in the language of Home Assistant, so a guest's entities stand together; renaming a guest later keeps the IDs.
+A guest's entities get the IDs `guest_<name>_<entity name>` when the guest is added, in the language of Home Assistant, so a guest's entities stand together; renaming a guest keeps the IDs.
 
 The integration only provides state and triggers; it notifies nobody and switches nothing. Every reaction (turning on lights on arrival, keeping the TV off while only guests are home, an alarm system that counts approved guests as home) is an automation that uses state triggers on these entities. No template is needed for that.
 
@@ -199,7 +208,7 @@ No entity changes an approval: Home Assistant cannot limit an entity to administ
 
 ### Visit log
 
-For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a visit log, not a surveillance record. It is off by default and switched on per guest; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a grid (default 15 minutes) counted from local midnight; a return within the grace time is the same visit, while a change of the approval ends a visit whose guest is away. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days and monthly totals (visits, hours) for 13 months by default. The log shows only on the page, with a CSV export and a delete button; the sensor "<guest> hours this month" carries the hours of the finished visits this month.
+For guests whose hours matter (a cleaner, a babysitter) Guest Access can keep a visit log, not a surveillance record. It is off by default and switched on per guest; switched off, the log kept so far is deleted. Each finished visit is logged with its date, start and length, both on a grid (default 15 minutes) counted from local midnight; a return within the grace time is the same visit, while a change of the approval ends a visit whose guest is away. Rooms, doors, places and overruns are not logged. Single visits are kept for 90 days and monthly totals (visits, hours) for 13 months by default. The log shows only on the page, with a CSV export and a delete button; the sensors "<guest> hours this month" and "<guest> hours last month" carry the hours of the finished visits of those months.
 
 ### Settings
 
@@ -208,20 +217,20 @@ On the page, area "Setup", pages Residents, Rooms and Timings:
 | Setting | Default | Meaning |
 |---|---|---|
 | Residents | none | `person` entities; the room lock applies while none of them is home |
-| Lockable rooms | none | areas, each with exactly one door contact |
+| Lockable rooms | none | areas, each with one or more door contacts |
 | Resume time | 10 min | after a restart, how long a guest who counted may take to be seen again and continue the visit |
 | Grid of the visit log | 15 min | start and length of a logged visit are rounded to it |
 | Keep single visits | 90 days | then a visit is deleted, its monthly total stays |
-| Keep monthly totals | 13 months | then the total is deleted |
+| Keep monthly totals | 13 months | then the total is deleted; "<guest> hours last month" needs at least 2 |
 
 ### Privacy
 
 Guest Access stores only the profiles with their notes, the visit in progress, for guests with a visit log the rounded visits, and which images in Home Assistant are guests' photos. It writes nothing about guests to the Home Assistant log.
 
-- The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation, "Guest activity" (there also the guest) and the guests' events are not recorded in the history.
+- The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation, "Guest activity" (there also the guest) and the guests' events, and the entities of "Unreachable", are not recorded in the history.
 - A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. Because of that Guest Access stores a photo without its metadata (where and when it was taken, the device), at most 1024 pixels wide and high and without its file name. Guest Access deletes only the photos uploaded through it: a replaced or removed photo, the photo of a deleted guest, an upload never saved with a guest (after a day) and all of them when the integration is removed; an image of a person or an area is never taken as a guest's photo nor deleted. The photo's address is not recorded in the history. Leave the photo out if that is too much.
 - A guest's note stays on the page; it is in no entity, attribute, history or diagnostics, only in the store (and so in backups).
-- The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
+- The sensors "<guest> hours this month" and "<guest> hours last month" are disabled when they are created: every user can read an entity, while the visit log is meant for administrators. Enable them where you need the hours.
 - Home Assistant still records the state of each guest's entities (counts, status, events) to the minute for as long as your recorder keeps history. If the history should not hold more than the visit log, exclude the guests' entities from the recorder, for example:
 
   ```yaml
@@ -229,12 +238,14 @@ Guest Access stores only the profiles with their notes, the visit in progress, f
     exclude:
       entity_globs:
         - binary_sensor.guest_*_counts
+        - binary_sensor.guest_*_approved
         - sensor.guest_*_status
         - sensor.guest_*_visit_ends
+        - sensor.guest_*_approval_ends
         - event.guest_*_activity
   ```
 
-  The endings follow the language of Home Assistant (in German `_zahlt`, `_status`, `_besuchsende`, `_aktivitat`). The summary entities (`guest_access_*`) stay recorded, for automations or dashboards that use their history. Exclude the trackers of guests too if their integration records more than home or away, for example a room.
+  The endings follow the language of Home Assistant (in German `_zahlt`, `_freigegeben`, `_status`, `_besuchsende`, `_freigabe_endet`, `_aktivitat`). The summary entities (`guest_access_*`) stay recorded, for automations or dashboards that use their history. Exclude the trackers of guests too if their integration records more than home or away, for example a room.
 
 ### Diagnostics
 
@@ -242,7 +253,7 @@ Guest Access stores only the profiles with their notes, the visit in progress, f
 
 ### Repairs
 
-Once Home Assistant has started, Guest Access opens a repair issue for every tracker, resident or door contact that is neither registered nor has a state, and for every lockable room whose area is gone; doors and areas as errors, because the room lock cannot see them. An issue closes by itself when the entity or area is back or no longer used.
+Once Home Assistant has started, Guest Access opens a repair issue for every tracker, resident or door contact that is neither registered nor has a state, and for every lockable room whose area is gone; doors and areas as errors, because the room lock cannot see them. An issue closes by itself when the entity or area is back or no longer used. An entity that is still there but `unavailable`, as a door contact with an empty battery, is no repair: "Unreachable" is on for as long as it lasts.
 
 ### Page
 
@@ -255,7 +266,7 @@ A sidebar page for administrators only, in the language of the user's profile (E
 | Setup | Overview | `/guest-access/setup/overview` | the steps (residents, lockable rooms, guests) with their state, "Continue" to the first open one, the version and, when deployed with `scripts/deploy.sh`, the commit |
 | | Residents, Rooms, Timings | `/guest-access/setup/residents`, `…/rooms`, `…/timings` | the settings |
 
-Settings are rows with their explanation behind an (i); one save button shows at the bottom right while something differs from what is saved, on a guest as on the setup pages. Numbers follow the number format of the profile, and a number field takes a point or a comma. An error reads one line by its kind, Home Assistant's message behind the (i). Opened without an address the page shows the guests, or the setup overview while nothing is set up; the addresses of before 0.7 (`/guest-access/guests`, `/guest-access/rooms`) lead to their new places.
+Settings are rows with their explanation behind an (i); one save button shows at the bottom right while something differs from what is saved, on a guest as on the setup pages. Numbers follow the number format of the profile, and a number field takes a point or a comma. An error reads one line by its kind, Home Assistant's message behind the (i). Opened without an address the page shows the guests, or the setup overview while nothing is set up.
 
 At the end of the header: when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a button to Home Assistant's page of the integration. Non-administrators get no page.
 
@@ -314,6 +325,21 @@ automation:
           message: "{{ trigger.to_state.attributes.guest }} has arrived."
 ```
 
+A door code that works only while the cleaner is welcome, home or not yet (and the same with `"off"` and `switch.turn_off` to take it away):
+
+```yaml
+automation:
+  - alias: Door code of the cleaner on
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.guest_cleaner_approved
+        to: "on"
+    actions:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.front_door_code_cleaner
+```
+
 Keep the TV off while only guests are home:
 
 ```yaml
@@ -353,12 +379,13 @@ automation:
 - A tracker with a valid approval is a key: wherever Guest Access counts guests as residents, for example in an alarm system, carrying the tracker is enough. A Bluetooth beacon can be imitated with its address. Keep approvals as narrow as possible (an end, time windows) and lock a lost tracker at once.
 - Guest Access knows trackers, not people: a guest who stays while the tracker leaves no longer counts, and neither does a guest whose tracker loses reception; a return within the grace time continues the visit.
 - After a restart, guests count again only once a tracker reports home.
-- Rooms are locked by their door contact only: a room without a door contact cannot be locked, and windows are not watched.
+- Rooms are locked by their door contacts only: a room without a door contact cannot be locked, a door without a contact is not seen, and windows are not watched. A door contact that is unavailable is not seen either; "Unreachable" says so.
 - Only administrators see the page and change approvals; Home Assistant cannot limit entities or actions to administrators, so there is no entity or action for it.
 
 ## Troubleshooting
 
 - **A guest does not count:** the status sensor says why: `not_approved` (approval off, ended or outside its time windows), `away` (no tracker home; `unknown` and `unavailable` never count), `resuming` (waiting for a tracker after a restart).
+- **"Unreachable" is on:** its attribute `entities` names the trackers, residents or door contacts that are unavailable; a door contact with an empty battery is the usual cause. Until it is back the room lock does not see that door.
 - **A repair issue names a tracker, resident, door or area:** it was removed or renamed; choose the new one on the page.
 - **The page is missing:** it is shown to administrators only, after the integration is set up.
 - **Saving says "no photo uploaded through Guest Access":** the photo was chosen more than a day ago without saving, or deleted meanwhile; choose it again.
@@ -379,12 +406,18 @@ IDs as created in English; Home Assistant takes the entity name in its own langu
 | `binary_sensor.guest_access_guests_home` | `<entry>_guests_home` | `on` while any guest counts |
 | `binary_sensor.guest_access_only_guests_home` | `<entry>_only_guests_home` | `on` while guests count and no resident is home |
 | `sensor.guest_access_guests_home_since` | `<entry>_guests_home_since` | earliest arrival of the guests who count, else unknown |
+| `sensor.guest_access_number_of_guests_home` | `<entry>_guests_count` | number of guests who count |
 | `event.guest_access_guest_activity` | `<entry>_guest_activity` | event types below, for every guest |
 | `event.guest_access_room_violation` | `<entry>_room_violation` | event type `opened` |
+| `binary_sensor.guest_access_<room>_locked` | `<entry>_room_locked_<area ID>` | `on` while the room is locked; attributes `area_id` and `reason`: `locked`, `no_lock` (no room lock right now), `guest_may_enter` (in the rooms of a guest who counts or resumes), `open_at_start` (a door was open when the lock started); one per lockable room, removed when the room stops being lockable |
+| `binary_sensor.guest_access_unreachable` | `<entry>_unreachable` | `on` while a tracker, resident or door contact is `unavailable` or has no state, once Home Assistant has started; attribute `entities`: their entity IDs, sorted |
 | `binary_sensor.guest_<name>_counts` | `<guest>_counts` | `on` while the guest counts; `entity_picture`: the guest's photo |
+| `binary_sensor.guest_<name>_approved` | `<guest>_approved` | `on` while the approval lets the guest count, home or not |
 | `sensor.guest_<name>_status` | `<guest>_status` | `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive`; `entity_picture`: the guest's photo |
 | `sensor.guest_<name>_visit_ends` | `<guest>_visit_ends` | end of the visit while the guest counts with a time per visit, else unknown |
+| `sensor.guest_<name>_approval_ends` | `<guest>_approval_ends` | end of the approval, unknown without an end |
 | `sensor.guest_<name>_hours_this_month` | `<guest>_month_hours` | hours of the finished visits this month; unknown without a visit log; disabled by default |
+| `sensor.guest_<name>_hours_last_month` | `<guest>_last_month_hours` | hours of the visits last month; unknown without a visit log or while monthly totals are kept for one month only; disabled by default |
 | `event.guest_<name>_activity` | `<guest>_activity` | event types below |
 
 ### Events
@@ -396,8 +429,9 @@ IDs as created in English; Home Assistant takes the entity name in its own langu
 | guest | `time_up` | `visit_ends` |
 | guest | `approval_expired` | `kind`, `until`, `windows`: the approval that no longer applies |
 | guest | `approval_changed` | `kind`, `until`, `windows`: the new approval; `reason`: `changed` (by an administrator) or `visit_over` (a once approval after its visit); `by`: name of the administrator, `null` for `visit_over` |
+| guest | `arrived_not_approved` | `kind`, `until`, `windows`: the approval that does not let the guest count; raised when a tracker comes home, once per arrival: not when a guest who is home is locked, and not again after a restart or a tracker that dropped out |
 | guest activity | every type of a guest | the data of that type, and `guest`: name of the guest, `guest_id`: the guest's ID |
-| room violation | `opened` | `area_id`, `area` (name), `door` (entity ID), `guests`: names of the guests who count |
+| room violation | `opened` | `area_id`, `area` (name), `door` (entity ID of the door that opened), `guests`: names of the guests who count |
 
 `kind` is `off`, `once`, `until` or `permanent`; `until` a time or `null`; `windows` a list of `{"weekdays": [0–6, Monday 0], "start": "HH:MM", "end": "HH:MM"}` in local time, an end before the start reaching past midnight. A change by an administrator carries that user's context, so the logbook names them.
 
@@ -421,7 +455,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 | `guest_access/delete_guest` | `guest_id`; removes the guest with its device and visit log |
 | `guest_access/delete_visits` | `guest_id`; deletes the guest's visit log |
 | `guest_access/visit_log` | `guest_id`; returns the guest's visit log: `visits` (newest first, each with `start` and `minutes`), `months` (per local month `YYYY-MM`: `visits`, `minutes`) and `this_month` (the current local month) |
-| `guest_access/save_settings` | `residents`, `rooms` (`area_id`, `door`), optionally `resume_minutes`, `log_grid_minutes`, `log_keep_days`, `log_keep_months` |
+| `guest_access/save_settings` | `residents`, `rooms` (`area_id`, `doors`: one or more entity IDs), optionally `resume_minutes`, `log_grid_minutes`, `log_keep_days`, `log_keep_months` |
 
 ### Photo upload
 
@@ -429,7 +463,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 
 ### Store
 
-`.storage/guest_access`, version 1, holds the settings, the guests, their runtime state, the room lock, the visit log and the IDs of the guests' photos. A new version comes with a migration from the one before; Home Assistant backups include the file.
+`.storage/guest_access`, version 1, holds the settings, the guests, their runtime state, the room lock, the visit log and the IDs of the guests' photos. A new version, also a minor one, comes with a migration from the one before; Home Assistant backups include the file.
 
 ## Installation
 
@@ -477,13 +511,13 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, the page checks and hassfest in Docker. The page check is not part of CI: run `scripts/check.sh` before a release that changes the page.
 
-The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (Home Assistant's frame with its areas and tabs on every page, old addresses and the query in the address, the setup overview, settings rows with their (i) and the save button, list, guest views, visit log, lock, rename, photo and note, errors, numbers in German, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
+The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (Home Assistant's frame with its areas and tabs on every page, the addresses with their query, the setup overview, settings rows with their (i) and the save button, rooms with several door contacts, list, guest views, visit log, lock, rename, photo and note, errors, numbers in German, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
 
 ```bash
 uv venv --python 3.14 .venv-panel && uv pip install --python .venv-panel/bin/python -r requirements_panel.txt
 ```
 
-They use an installed Google Chrome, otherwise Playwright's Chromium (`.venv-panel/bin/python -m playwright install chromium`). The pictures in this README come from the same run:
+They use an installed Google Chrome, otherwise Playwright's Chromium (`.venv-panel/bin/python -m playwright install chromium`). `--only <text>` runs just the checks whose name contains that text. The pictures in this README come from the same run:
 
 ```bash
 .venv-panel/bin/python -I scripts/panel/check_panel.py --screenshots docs/screenshots

@@ -104,6 +104,9 @@ template:
       - name: Kids room door
         device_class: door
         state: "on"
+      - name: Bedroom terrace door
+        device_class: door
+        state: "off"
 """
 
 
@@ -216,15 +219,21 @@ def _store(areas: dict[str, str], now: datetime) -> dict[str, Any]:
         day += timedelta(days=1)
     return {
         "version": 1,
-        "minor_version": 1,
+        "minor_version": 2,
         "key": "guest_access",
         "data": {
             "settings": {
                 "residents": ["person.sam", "person.robin"],
                 "rooms": [
-                    {"area_id": areas["Office"], "door": "binary_sensor.office_door"},
-                    {"area_id": areas["Bedroom"], "door": "binary_sensor.bedroom_door"},
-                    {"area_id": areas["Kids room"], "door": "binary_sensor.kids_room_door"},
+                    {"area_id": areas["Office"], "doors": ["binary_sensor.office_door"]},
+                    {
+                        "area_id": areas["Bedroom"],
+                        "doors": [
+                            "binary_sensor.bedroom_door",
+                            "binary_sensor.bedroom_terrace_door",
+                        ],
+                    },
+                    {"area_id": areas["Kids room"], "doors": ["binary_sensor.kids_room_door"]},
                 ],
             },
             "guests": guests,
@@ -530,8 +539,12 @@ class Checks:
     passed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     before: Callable[[], Awaitable[None]] | None = None
+    # With --only: run just the checks whose name contains this
+    only: str | None = None
 
     async def run(self, name: str, check: Callable[[], Awaitable[None]]) -> None:
+        if self.only is not None and self.only not in name:
+            return
         try:
             async with asyncio.timeout(CHECK_SECONDS):
                 if self.before is not None:
@@ -902,16 +915,16 @@ async def check_page(
 
     await checks.run("the setup overview: three steps, the version line", setup_overview)
 
-    async def old_addresses() -> None:
-        # Bookmarks and links of before: to the page that took the place
-        for old, new in (
-            ("rooms", "/guest-access/setup/rooms"),
+    async def short_addresses() -> None:
+        # An area alone leads to its first page, no address or an unknown one to the guests
+        for short, full in (
             ("guests", "/guest-access/guests/list"),
-            ("", "/guest-access/guests/list"),
             ("setup", "/guest-access/setup/overview"),
+            ("", "/guest-access/guests/list"),
+            ("nowhere", "/guest-access/guests/list"),
         ):
-            await page.goto(f"{instance.base}/guest-access/{old}")
-            await page.wait_for_url(f"**{new}")
+            await page.goto(f"{instance.base}/guest-access/{short}")
+            await page.wait_for_url(f"**{full}")
         # A change of the query alone opens the guest it names
         await _goto(page, instance, "guests/list")
         await page.evaluate(
@@ -928,7 +941,7 @@ async def check_page(
         await page.locator(ROW).first.wait_for()
 
     await checks.run(
-        "old addresses and a change of the query alone lead to the right page", old_addresses
+        "an area alone and a change of the query alone lead to the right page", short_addresses
     )
 
     async def views_in_the_url() -> None:
@@ -1049,6 +1062,84 @@ async def check_page(
         "settings: rows with their (i), one save button while changed, reaches the integration",
         settings_saved,
     )
+
+    async def room_doors(name: str) -> list[str]:
+        areas = await api.ws(instance.token, {"type": "config/area_registry/list"})
+        area_id = next(area["area_id"] for area in areas["result"] if area["name"] == name)
+        rooms = (await _snapshot(api, instance))["settings"]["rooms"]
+        return list(next(room["doors"] for room in rooms if room["area_id"] == area_id))
+
+    async def several_doors() -> None:
+        # A room with two door contacts shows both; a second one is added and taken away again
+        await _goto(page, instance, "setup/rooms")
+        entries = page.locator(f"{PANEL} .entry")
+        bedroom = entries.filter(has_text="Bedroom terrace door")
+        await bedroom.wait_for()
+        expect(
+            await bedroom.locator("ha-entity-picker", has_text="Bedroom door").count() == 1,
+            "the first of two doors is missing",
+        )
+        office = entries.nth(0)
+        expect(await _fab_hidden(page), "a save button with nothing changed")
+        # The door between office and bedroom: a door of both rooms
+        await office.get_by_text("Add entity").click()
+        box = page.locator("ha-picker-combo-box")
+        await box.locator("input").fill("Bedroom door")
+        await box.locator("ha-list-item-option", has_text="Bedroom door").first.click()
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
+        both = ["binary_sensor.office_door", "binary_sensor.bedroom_door"]
+
+        async def saved() -> bool:
+            return await room_doors("Office") == both
+
+        await _until(saved, "the office's second door in the integration")
+        await _until(lambda: _fab_hidden(page), "the save button to go after saving")
+        expect(
+            await room_doors("Bedroom")
+            == ["binary_sensor.bedroom_door", "binary_sensor.bedroom_terrace_door"],
+            "the bedroom lost a door",
+        )
+        # Opened again, the room shows both
+        await _goto(page, instance, "setup/overview")
+        await _goto(page, instance, "setup/rooms")
+        office = page.locator(f"{PANEL} .entry").nth(0)
+        second = office.locator("ha-entity-picker", has_text="Bedroom door")
+        await second.wait_for()
+        expect(
+            await office.locator("ha-entity-picker", has_text="Office door").count() == 1,
+            "the office's first door is missing",
+        )
+        # Taken away with its clear button, the first door stays
+        await second.locator("ha-picker-field").hover()
+        await second.locator("ha-picker-field ha-icon-button").first.click()
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
+
+        async def removed() -> bool:
+            return await room_doors("Office") == both[:1]
+
+        await _until(removed, "the office with its one door again")
+
+    await checks.run(
+        "a room with several door contacts: shown, one added for two rooms, taken away again",
+        several_doors,
+    )
+
+    async def room_needs_a_door() -> None:
+        await _goto(page, instance, "setup/rooms")
+        kids = page.locator(f"{PANEL} .entry").filter(has_text="Kids room door")
+        only = kids.locator("ha-entity-picker", has_text="Kids room door")
+        await only.locator("ha-picker-field").hover()
+        await only.locator("ha-picker-field ha-icon-button").first.click()
+        await page.locator(f"{PANEL} ha-button#save:not([hidden])").click()
+        await page.locator(
+            f"{PANEL} ha-alert[alert-type='error']", has_text="The input does not fit."
+        ).wait_for()
+        expect(
+            await room_doors("Kids room") == ["binary_sensor.kids_room_door"],
+            "a room without a door contact was saved",
+        )
+
+    await checks.run("a room without a door contact is not saved", room_needs_a_door)
 
     async def rename_guest() -> None:
         await _goto(page, instance, "guests/list?key=g_ben")
@@ -1442,13 +1533,14 @@ async def main() -> int:
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory")
     parser.add_argument("--browser", choices=["chrome", "chromium"], default="chromium")
     parser.add_argument("--headed", action="store_true")
+    parser.add_argument("--only", help="run only the checks whose name contains this text")
     args = parser.parse_args()
     if args.screenshots is not None:
         args.screenshots.mkdir(parents=True, exist_ok=True)
 
     directory = Path(tempfile.mkdtemp(prefix="guest-access-panel-"))
     instance = Instance(directory)
-    checks = Checks()
+    checks = Checks(only=args.only)
     async with aiohttp.ClientSession() as session:
         try:
             api = await instance.start(session)

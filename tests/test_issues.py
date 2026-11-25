@@ -55,7 +55,7 @@ async def test_missing_resident_door_and_area(
     await hass.async_block_till_done()
     found = issues(hass)
     assert found[f"missing_resident_{RESIDENT}"].translation_placeholders == {"entity": RESIDENT}
-    door = found[f"missing_door_{DOOR}"]
+    door = found[f"missing_door_{bedroom}_{DOOR}"]
     assert door.severity is ir.IssueSeverity.ERROR
     assert door.translation_placeholders == {"room": "Bedroom", "entity": DOOR}
 
@@ -63,7 +63,7 @@ async def test_missing_resident_door_and_area(
     await hass.async_block_till_done()
     area = issues(hass)[f"missing_area_{bedroom}"]
     assert area.translation_placeholders == {"area": bedroom, "entity": DOOR}
-    assert f"missing_door_{DOOR}" not in issues(hass)
+    assert f"missing_door_{bedroom}_{DOOR}" not in issues(hass)
 
     engine: GuestEngine = entry.runtime_data
     engine.async_save_settings(Settings((), ()))
@@ -75,9 +75,11 @@ async def test_issues_removed_with_entry(hass: HomeAssistant, entry: MockConfigE
     """Removing the entry closes its issues; a new door added later is checked again."""
     engine: GuestEngine = entry.runtime_data
     area = ar.async_get(hass).async_create("Office")
-    engine.async_save_settings(Settings((RESIDENT,), (Room(area.id, "binary_sensor.office_door"),)))
+    engine.async_save_settings(
+        Settings((RESIDENT,), (Room(area.id, ("binary_sensor.office_door",)),))
+    )
     await hass.async_block_till_done()
-    assert "missing_door_binary_sensor.office_door" in issues(hass)
+    assert f"missing_door_{area.id}_binary_sensor.office_door" in issues(hass)
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     assert issues(hass) == {}

@@ -71,8 +71,6 @@ if (!customElements.get("guest-access-panel")) {
     ["guests", "guests", "tabGuests", [["list", "pageList"]]],
     ["setup", "setup", "tabSetup", [["overview", "pageOverview"], ["residents", "pageResidents"], ["rooms", "pageRooms"], ["timings", "pageTimings"]]],
   ];
-  // The addresses of before the areas, as bookmarks still have them; /guests is the area now
-  const OLD_PAGES = { rooms: "setup/rooms" };
   const areaOf = (page) => AREAS.find((a) => a[3].some(([p]) => p === page)) || AREAS[0];
   const pagePath = (page) => `${PANEL_PATH}/${areaOf(page)[0]}/${page}`;
   // The views of a guest: view, text
@@ -130,7 +128,7 @@ if (!customElements.get("guest-access-panel")) {
       field_visit_minutes: "Time per visit",
       field_residents: "Residents",
       field_area: "Area",
-      field_door: "Door contact",
+      field_doors: "Door contacts",
       field_weekdays: "Weekdays",
       field_start: "From",
       field_end: "To",
@@ -171,7 +169,7 @@ if (!customElements.get("guest-access-panel")) {
       addRoom: "Add room",
       removeRoom: "Remove room",
       lockableRooms: "Lockable rooms",
-      roomsHelp: "A lockable room is an area with exactly one door contact.",
+      roomsHelp: "A lockable room is an area with the contacts of its doors. A room with several doors, as a walk-through room or one with a second entrance, gets all of them: while it is locked, any of them opening is a room violation.",
       noRooms: "No lockable rooms set yet.",
       setUpRooms: "Set up rooms",
       allRooms: "all rooms",
@@ -271,7 +269,7 @@ if (!customElements.get("guest-access-panel")) {
       field_visit_minutes: "Dauer je Besuch",
       field_residents: "Bewohner",
       field_area: "Bereich",
-      field_door: "Türkontakt",
+      field_doors: "Türkontakte",
       field_weekdays: "Wochentage",
       field_start: "Von",
       field_end: "Bis",
@@ -312,7 +310,7 @@ if (!customElements.get("guest-access-panel")) {
       addRoom: "Raum hinzufügen",
       removeRoom: "Raum entfernen",
       lockableRooms: "Sperrbare Räume",
-      roomsHelp: "Sperrbar ist ein Bereich mit genau einem Türkontakt.",
+      roomsHelp: "Sperrbar ist ein Bereich mit den Kontakten seiner Türen. Ein Raum mit mehreren Türen, etwa ein Durchgangszimmer oder einer mit zweitem Eingang, bekommt alle: Solange er gesperrt ist, ist das Öffnen jeder davon ein Raumverstoß.",
       noRooms: "Noch keine sperrbaren Räume festgelegt.",
       setUpRooms: "Räume einrichten",
       allRooms: "alle Räume",
@@ -537,16 +535,12 @@ if (!customElements.get("guest-access-panel")) {
       this._render();
     }
 
-    // The address: /<area>/<page>, a guest ?key=…&view=…; an old address goes to
-    // its new place, an area alone to its first page, nothing to the guests (to the
-    // setup overview while nothing is set up)
+    // The address: /<area>/<page>, a guest ?key=…&view=…; an area alone goes to
+    // its first page, anything else to the guests (to the setup overview while
+    // nothing is set up)
     set route(route) {
       const parts = (route?.path || "").split("/").filter(Boolean);
       const search = window.location.search;
-      if (OLD_PAGES[parts[0]]) {
-        navigate(`${PANEL_PATH}/${OLD_PAGES[parts[0]]}${search}`, true);
-        return;
-      }
       const area = AREAS.find((a) => a[0] === parts[0]);
       if (!area) {
         navigate(this._data && this._nothingSetUp() ? `${PANEL_PATH}/setup/overview` : `${PANEL_PATH}/guests/list`, true);
@@ -801,7 +795,7 @@ if (!customElements.get("guest-access-panel")) {
       const s = this._data.settings;
       return {
         residents: [...s.residents],
-        rooms: s.rooms.map((room) => ({ ...room })),
+        rooms: s.rooms.map((room) => ({ ...room, doors: [...room.doors] })),
         resume_minutes: s.resume_minutes,
         log_grid_minutes: s.log_grid_minutes,
         log_keep_days: s.log_keep_days,
@@ -813,7 +807,7 @@ if (!customElements.get("guest-access-panel")) {
       return {
         type: `${DOMAIN}/save_settings`,
         residents: s.residents || [],
-        rooms: s.rooms.filter((r) => r.area_id || r.door),
+        rooms: s.rooms.filter((r) => r.area_id || r.doors.length),
         resume_minutes: s.resume_minutes,
         log_grid_minutes: s.log_grid_minutes,
         log_keep_days: s.log_keep_days,
@@ -1309,12 +1303,12 @@ if (!customElements.get("guest-access-panel")) {
           name: "",
           schema: [
             { name: "area", required: true, selector: { area: {} } },
-            { name: "door", required: true, selector: { entity: { filter: { domain: "binary_sensor" } } } },
+            { name: "doors", required: true, selector: { entity: { multiple: true, filter: { domain: "binary_sensor" } } } },
           ],
         },
-      ], { area: room.area_id || null, door: room.door || null }, (value) => {
+      ], { area: room.area_id || null, doors: room.doors }, (value) => {
         const rooms = this._settingsNow().rooms.map((r) => ({ ...r }));
-        rooms[i] = { area_id: value.area || "", door: value.door || "" };
+        rooms[i] = { area_id: value.area || "", doors: value.doors || [] };
         this._setSetting({ rooms });
         this._update();
       })}<ha-icon-button data-act="room-remove" data-key="${i}" label="${esc(this._t("removeRoom"))}" path="${MDI.delete}"></ha-icon-button></div>`).join("");
@@ -1421,7 +1415,7 @@ if (!customElements.get("guest-access-panel")) {
           f.windows.splice(Number(key), 1);
           break;
         case "room-add":
-          this._setSetting({ rooms: [...this._settingsNow().rooms, { area_id: "", door: "" }] });
+          this._setSetting({ rooms: [...this._settingsNow().rooms, { area_id: "", doors: [] }] });
           break;
         case "room-remove":
           this._setSetting({ rooms: this._settingsNow().rooms.filter((_, i) => i !== Number(key)) });

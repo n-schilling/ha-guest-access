@@ -125,20 +125,24 @@ def test_guest_invalid() -> None:
 
 
 def test_settings_invalid() -> None:
-    """An area or a door is used once only."""
+    """An area is a room once only; a room needs a door and has each door once."""
     with pytest.raises(ValueError):
-        Settings((), (Room("bedroom", "binary_sensor.a"), Room("bedroom", "binary_sensor.b")))
+        Settings((), (Room("bedroom", ("binary_sensor.a",)), Room("bedroom", ("binary_sensor.b",))))
     with pytest.raises(ValueError):
-        Settings((), (Room("bedroom", "binary_sensor.a"), Room("office", "binary_sensor.a")))
-    settings = Settings((), (Room("bedroom", "binary_sensor.a"),))
-    assert settings.room("bedroom") == Room("bedroom", "binary_sensor.a")
+        Room("bedroom", ())
+    with pytest.raises(ValueError):
+        Room("bedroom", ("binary_sensor.a", "binary_sensor.a"))
+    # A door between two rooms belongs to both
+    Settings((), (Room("bedroom", ("binary_sensor.a",)), Room("office", ("binary_sensor.a",))))
+    settings = Settings((), (Room("bedroom", ("binary_sensor.a",)),))
+    assert settings.room("bedroom") == Room("bedroom", ("binary_sensor.a",))
     assert settings.room("office") is None
 
 
 def test_round_trip() -> None:
     """Everything comes back from its JSON form unchanged."""
     data = AccessData(
-        settings=Settings(("person.sam",), (Room("bedroom", "binary_sensor.door"),)),
+        settings=Settings(("person.sam",), (Room("bedroom", ("binary_sensor.door",)),)),
         guests={
             "a": Guest(
                 "a",

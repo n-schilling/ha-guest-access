@@ -10,9 +10,19 @@ All notable changes to this project are documented here. The format follows
 
 - "Guest activity" (`event.guest_access_guest_activity`): the events of every guest in one entity, with the same types and data as a guest's own event entity plus `guest` (name) and `guest_id`. One trigger now covers all guests, also those added later; the guest and the administrator are not recorded in the history.
 - WebSocket command `guest_access/visit_log`: a guest's visit log with its single visits and monthly totals, for administrators.
+- "<guest> approved" (`binary_sensor.guest_<name>_approved`): on while the approval lets the guest count, home or not, following its end and its time windows. For what should work only while a guest is welcome, as a door code or the guest Wi-Fi.
+- Event type `arrived_not_approved` on a guest's event entity and on "Guest activity": a tracker came home while the approval does not let the guest count. Raised once per arrival, not again after a restart.
+- "<room> locked" (`binary_sensor.guest_access_<room>_locked`): one sensor per lockable room, on while the room is locked, with the attributes `area_id` and `reason` (`locked`, `no_lock`, `guest_may_enter` or `open_at_start`), so an automation can tell that a room stayed free because a door was open when the lock started.
+- "<guest> approval ends" (`sensor.guest_<name>_approval_ends`): the end of an approval that has one, as a timestamp, for a reminder before it runs out.
+- "<guest> hours last month" (`sensor.guest_<name>_hours_last_month`): last month's hours from the visit log, disabled by default like this month's. It needs monthly totals kept for at least two months.
+- "Number of guests home" (`sensor.guest_access_number_of_guests_home`): how many guests count.
+- "Unreachable" (`binary_sensor.guest_access_unreachable`, a problem sensor): on while a tracker, resident or door contact is unavailable or has no state, once Home Assistant has started, with the entities as attribute. The room lock cannot see such a door, and such a tracker never comes home.
+- A lockable room takes several door contacts, for a walk-through room or a room with a second entrance: while the room is locked, any of them opening is a room violation. A door between two lockable rooms can be set for both. Existing rooms keep their door contact.
 
 ### Changed
 
+- **Breaking:** `guest_access/save_settings` takes `doors` (a list) per room instead of `door`. The store moves to minor version 2; a store written by an earlier version is migrated when it loads. An earlier version cannot read the new store: going back needs a backup from before the update. The repair issue for a missing door contact has a new ID with the room in it.
+- The page's address `/guest-access/rooms` no longer leads to the rooms: they are at `/guest-access/setup/rooms`.
 - The page loads a guest's visit log only for the guest whose log it shows. The data pushed to open pages after every change no longer carry the visit logs of all guests.
 
 ### Fixed

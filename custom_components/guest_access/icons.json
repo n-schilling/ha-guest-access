@@ -18,6 +18,18 @@
         "state": {
           "on": "mdi:home-account"
         }
+      },
+      "approved": {
+        "default": "mdi:account-off",
+        "state": {
+          "on": "mdi:account-check"
+        }
+      },
+      "room_locked": {
+        "default": "mdi:door",
+        "state": {
+          "on": "mdi:door-closed-lock"
+        }
       }
     },
     "event": {
@@ -52,6 +64,15 @@
       },
       "month_hours": {
         "default": "mdi:calendar-clock"
+      },
+      "approval_ends": {
+        "default": "mdi:calendar-end"
+      },
+      "last_month_hours": {
+        "default": "mdi:calendar-clock"
+      },
+      "guests_count": {
+        "default": "mdi:account-multiple"
       }
     }
   }

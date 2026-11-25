@@ -124,16 +124,20 @@ async def test_save_settings(
     good = {
         "type": "guest_access/save_settings",
         "residents": [RESIDENT, "person.robin"],
-        "rooms": [{"area_id": bedroom, "door": DOOR}],
+        "rooms": [{"area_id": bedroom, "doors": [DOOR, "binary_sensor.bedroom_terrace"]}],
     }
     await client.send_json_auto_id(good)
     assert (await client.receive_json())["success"]
     assert engine.data.settings.residents == (RESIDENT, "person.robin")
+    assert engine.data.settings.rooms[0].doors == (DOOR, "binary_sensor.bedroom_terrace")
     for change in (
         {"residents": ["device_tracker.robin"]},
-        {"rooms": [{"area_id": bedroom, "door": "switch.door"}]},
-        {"rooms": [{"area_id": "office", "door": DOOR}]},
-        {"rooms": [{"area_id": bedroom, "door": DOOR}, {"area_id": bedroom, "door": DOOR}]},
+        {"rooms": [{"area_id": bedroom, "doors": ["switch.door"]}]},
+        {"rooms": [{"area_id": bedroom, "doors": []}]},
+        {"rooms": [{"area_id": bedroom, "doors": [DOOR, DOOR]}]},
+        {"rooms": [{"area_id": bedroom, "door": DOOR}]},
+        {"rooms": [{"area_id": "office", "doors": [DOOR]}]},
+        {"rooms": [{"area_id": bedroom, "doors": [DOOR]}, {"area_id": bedroom, "doors": [DOOR]}]},
     ):
         await client.send_json_auto_id({**good, **change})
         reply = await client.receive_json()

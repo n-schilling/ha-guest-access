@@ -33,6 +33,34 @@
       },
       "only_guests_home": {
         "name": "Only guests home"
+      },
+      "approved": {
+        "name": "Approved"
+      },
+      "room_locked": {
+        "name": "{room} locked",
+        "state_attributes": {
+          "area_id": {
+            "name": "Area ID"
+          },
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "locked": "Locked",
+              "no_lock": "No room lock",
+              "guest_may_enter": "A guest may enter",
+              "open_at_start": "Door open when the lock started"
+            }
+          }
+        }
+      },
+      "unreachable": {
+        "name": "Unreachable",
+        "state_attributes": {
+          "entities": {
+            "name": "Entities"
+          }
+        }
       }
     },
     "event": {
@@ -45,7 +73,8 @@
               "left": "Left",
               "time_up": "Time up",
               "approval_expired": "Approval expired",
-              "approval_changed": "Approval changed"
+              "approval_changed": "Approval changed",
+              "arrived_not_approved": "Arrived without approval"
             }
           },
           "visit_ends": {
@@ -87,7 +116,8 @@
               "left": "Left",
               "time_up": "Time up",
               "approval_expired": "Approval expired",
-              "approval_changed": "Approval changed"
+              "approval_changed": "Approval changed",
+              "arrived_not_approved": "Arrived without approval"
             }
           },
           "guest": {
@@ -170,6 +200,15 @@
       },
       "month_hours": {
         "name": "Hours this month"
+      },
+      "approval_ends": {
+        "name": "Approval ends"
+      },
+      "last_month_hours": {
+        "name": "Hours last month"
+      },
+      "guests_count": {
+        "name": "Number of guests home"
       }
     }
   },

@@ -38,7 +38,7 @@ async def test_diagnostics_hide_who(
     for secret in ("Anna", "anna", TRACKER, RESIDENT, DOOR, bedroom, "Bedroom"):
         assert secret not in text
     assert result["settings"]["residents"] == ["not_home"]
-    assert result["settings"]["rooms"] == [{"room": "Room 1", "door": "off"}]
+    assert result["settings"]["rooms"] == [{"room": "Room 1", "doors": ["off"]}]
     assert result["only_guests_home"] is True
     assert result["problems"] == []
     (guest,) = result["guests"]

@@ -10,6 +10,8 @@ TITLE: Final = "Guest Access"
 
 STORAGE_KEY: Final = DOMAIN
 STORAGE_VERSION: Final = 1
+# 2: a lockable room has several door contacts (`doors`), before one (`door`)
+STORAGE_MINOR_VERSION: Final = 2
 
 # Defaults and limits; the values themselves are settings of the entry or of a guest
 # A return within the grace time continues the visit
@@ -52,12 +54,15 @@ EVENT_LEFT: Final = "left"
 EVENT_TIME_UP: Final = "time_up"
 EVENT_APPROVAL_EXPIRED: Final = "approval_expired"
 EVENT_APPROVAL_CHANGED: Final = "approval_changed"
+# A tracker came home while the approval does not let the guest count
+EVENT_ARRIVED_NOT_APPROVED: Final = "arrived_not_approved"
 GUEST_EVENT_TYPES: Final = [
     EVENT_ARRIVED,
     EVENT_LEFT,
     EVENT_TIME_UP,
     EVENT_APPROVAL_EXPIRED,
     EVENT_APPROVAL_CHANGED,
+    EVENT_ARRIVED_NOT_APPROVED,
 ]
 # Event type of the room violation entity
 EVENT_OPENED: Final = "opened"

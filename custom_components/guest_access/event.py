@@ -1,4 +1,4 @@
-"""Triggers: what happens to a guest, and a door of a locked room that opens."""
+"""Triggers: what happens to a guest, to any guest, and a door of a locked room that opens."""
 
 from __future__ import annotations
 

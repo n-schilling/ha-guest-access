@@ -106,7 +106,7 @@ rules:
   entity-device-class: done
   entity-disabled-by-default:
     status: done
-    comment: The hours this month, because every user can read an entity.
+    comment: The hours of this and last month, because every user can read an entity.
   entity-translations: done
   exception-translations:
     status: exempt

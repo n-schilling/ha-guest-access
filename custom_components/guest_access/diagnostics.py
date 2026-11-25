@@ -95,7 +95,7 @@ async def async_get_config_entry_diagnostics(
         "settings": {
             "residents": [_state(hass, person) for person in settings.residents],
             "rooms": [
-                {"room": rooms[item.area_id], "door": _state(hass, item.door)}
+                {"room": rooms[item.area_id], "doors": [_state(hass, door) for door in item.doors]}
                 for item in settings.rooms
             ],
             "resume_minutes": settings.resume_minutes,

@@ -22,7 +22,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from custom_components.guest_access.const import STORAGE_KEY, STORAGE_VERSION
+from custom_components.guest_access.const import (
+    DOMAIN,
+    STORAGE_KEY,
+    STORAGE_MINOR_VERSION,
+    STORAGE_VERSION,
+    TITLE,
+)
 from custom_components.guest_access.engine import GuestEngine
 from custom_components.guest_access.model import AccessData, Approval, ApprovalKind
 
@@ -60,7 +66,7 @@ def _with_guest(event: tuple[str, dict[str, Any]]) -> tuple[str, dict[str, Any]]
     return event[0], {"guest": "Anna", "guest_id": "anna", **event[1]}
 
 
-async def test_entities(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+async def test_entities(hass: HomeAssistant, entry: MockConfigEntry, bedroom: str) -> None:
     """Entity IDs, unique IDs and translation keys of the hub and of a guest."""
     registry = er.async_get(hass)
     entities = {
@@ -82,10 +88,28 @@ async def test_entities(hass: HomeAssistant, entry: MockConfigEntry) -> None:
         ),
         "event.guest_access_guest_activity": (f"{hub}_guest_activity", "guest_activity", True),
         "event.guest_access_room_violation": (f"{hub}_room_violation", "room_violation", True),
+        "binary_sensor.guest_access_bedroom_locked": (
+            f"{hub}_room_locked_{bedroom}",
+            "room_locked",
+            True,
+        ),
+        "binary_sensor.guest_access_unreachable": (f"{hub}_unreachable", "unreachable", True),
+        "binary_sensor.guest_anna_approved": ("anna_approved", "approved", True),
         "binary_sensor.guest_anna_counts": ("anna_counts", "counts", True),
         "sensor.guest_anna_status": ("anna_status", "status", True),
         "sensor.guest_anna_visit_ends": ("anna_visit_ends", "visit_ends", True),
         "sensor.guest_anna_hours_this_month": ("anna_month_hours", "month_hours", False),
+        "sensor.guest_anna_hours_last_month": (
+            "anna_last_month_hours",
+            "last_month_hours",
+            False,
+        ),
+        "sensor.guest_anna_approval_ends": ("anna_approval_ends", "approval_ends", True),
+        "sensor.guest_access_number_of_guests_home": (
+            f"{hub}_guests_count",
+            "guests_count",
+            True,
+        ),
         "event.guest_anna_activity": ("anna_activity", "activity", True),
     }
     status = hass.states.get("sensor.guest_anna_status")
@@ -107,6 +131,7 @@ async def test_entities(hass: HomeAssistant, entry: MockConfigEntry) -> None:
         "time_up",
         "approval_expired",
         "approval_changed",
+        "arrived_not_approved",
     ]
     guest_activity = hass.states.get(GUEST_ACTIVITY)
     assert guest_activity is not None
@@ -168,6 +193,14 @@ async def test_guest_events(
     hass.states.async_set(TRACKER, "not_home")
     await hass.async_block_till_done()
     assert _event(hass, ACTIVITY) == ("left", {})
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
+
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert _event(hass, ACTIVITY) == (
+        "arrived_not_approved",
+        {"kind": "until", "until": until.isoformat(), "windows": []},
+    )
     assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
 
@@ -249,7 +282,12 @@ async def test_websocket_commands(hass: HomeAssistant, entry: MockConfigEntry) -
 STORED_V1: dict[str, Any] = {
     "settings": {
         "residents": ["person.sam"],
-        "rooms": [{"area_id": "bedroom", "door": "binary_sensor.bedroom_door"}],
+        "rooms": [
+            {
+                "area_id": "bedroom",
+                "doors": ["binary_sensor.bedroom_door", "binary_sensor.bedroom_terrace"],
+            }
+        ],
         "resume_minutes": 10,
         "log_grid_minutes": 15,
         "log_keep_days": 90,
@@ -285,6 +323,7 @@ STORED_V1: dict[str, Any] = {
             "restarted": None,
             "time_up": False,
             "approval_expired": False,
+            "unapproved": False,
         }
     },
     "lock": {"active": True, "exempt": ["kitchen"]},
@@ -305,7 +344,32 @@ def test_store_format() -> None:
     """Version 1 of the store reads and writes exactly these fields."""
     assert STORAGE_KEY == "guest_access"
     assert STORAGE_VERSION == 1
+    assert STORAGE_MINOR_VERSION == 2
     assert AccessData.from_dict(STORED_V1).as_dict() == STORED_V1
+
+
+async def test_store_one_door_per_room(
+    hass: HomeAssistant, hass_storage: dict[str, Any], bedroom: str
+) -> None:
+    """A store written before 0.8.0, one door contact per room, is migrated."""
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "settings": {"residents": [RESIDENT], "rooms": [{"area_id": bedroom, "door": DOOR}]},
+            "guests": [],
+            "presence": {},
+            "lock": {"active": False, "exempt": []},
+        },
+    }
+    entry = MockConfigEntry(domain=DOMAIN, title=TITLE)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert [room.as_dict() for room in _engine(entry).data.settings.rooms] == [
+        {"area_id": bedroom, "doors": [DOOR]}
+    ]
 
 
 def test_store_before_restart_time() -> None:

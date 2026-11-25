@@ -37,7 +37,7 @@ from custom_components.guest_access.model import (
 )
 
 T0 = datetime(2026, 11, 9, 12, tzinfo=UTC)
-ROOMS = (Room("bedroom", "binary_sensor.bedroom"), Room("kids", "binary_sensor.kids"))
+ROOMS = (Room("bedroom", ("binary_sensor.bedroom",)), Room("kids", ("binary_sensor.kids",)))
 PERMANENT = Approval(ApprovalKind.PERMANENT)
 
 
@@ -84,10 +84,34 @@ def test_arrive_time_up_leave() -> None:
 
 
 def test_no_approval_no_count() -> None:
-    """Without a valid approval a guest at home does not count."""
+    """Without a valid approval a guest at home does not count; the arrival is raised once."""
     data = make(guest(approval=Approval()))
-    assert evaluate(data, seen("a"), T0) == []
+    raised = evaluate(data, seen("a"), T0)
+    assert types(raised) == ["arrived_not_approved"]
+    assert raised[0].data == {"kind": "off", "until": None, "windows": []}
     assert not data.presence["a"].counting
+    # Staying raises nothing more, coming again does
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=1)) == []
+    assert evaluate(data, seen(), T0 + timedelta(minutes=2)) == []
+    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=3))) == ["arrived_not_approved"]
+    # Approved while home: an arrival; locked again while home: nothing, the change said so
+    data.guests["a"] = guest()
+    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=4))) == ["arrived"]
+    data.guests["a"] = guest(approval=Approval())
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=5)) == []
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=6)) == []
+
+
+def test_not_approved_once_over_a_dropout() -> None:
+    """Trackers that say nothing, as after a restart, are no new arrival without approval."""
+    data = make(guest(approval=Approval()))
+    assert types(evaluate(data, seen("a"), T0)) == ["arrived_not_approved"]
+    silent = Observed({}, False, unseen=frozenset({"a"}))
+    assert evaluate(data, silent, T0 + timedelta(minutes=1)) == []
+    assert evaluate(data, seen("a"), T0 + timedelta(minutes=2)) == []
+    # Known to be away in between: a new arrival
+    assert evaluate(data, seen(), T0 + timedelta(minutes=3)) == []
+    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=4))) == ["arrived_not_approved"]
 
 
 def test_approval_expires_while_home() -> None:
@@ -100,7 +124,9 @@ def test_approval_expires_while_home() -> None:
     assert evaluate(data, seen("a"), until + timedelta(minutes=1)) == []
     assert data.presence["a"].counting
     evaluate(data, seen(), until + timedelta(minutes=2))
-    assert evaluate(data, seen("a"), until + timedelta(minutes=3)) == []
+    assert types(evaluate(data, seen("a"), until + timedelta(minutes=3))) == [
+        "arrived_not_approved"
+    ]
     assert not data.presence["a"].counting
 
 
@@ -113,7 +139,7 @@ def test_window_closes_while_home() -> None:
     assert types(evaluate(data, seen("a"), T0)) == ["arrived"]
     assert "approval_expired" in types(evaluate(data, seen("a"), late))
     data = make(guest(approval=Approval(ApprovalKind.PERMANENT, None, (window,))))
-    assert evaluate(data, seen("a"), late) == []
+    assert types(evaluate(data, seen("a"), late)) == ["arrived_not_approved"]
 
 
 def test_locked_guest_stops_counting() -> None:
@@ -150,7 +176,7 @@ def test_once_grace() -> None:
         "by": None,
     }
     assert data.guests["a"].approval == Approval()
-    assert evaluate(data, seen("a"), T0 + timedelta(minutes=30)) == []
+    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=30))) == ["arrived_not_approved"]
 
 
 def test_restart_resume() -> None:
@@ -357,7 +383,7 @@ def test_no_return_when_locked_or_invalid() -> None:
     evaluate(data, seen("a"), T0)
     evaluate(data, seen(), T0 + timedelta(minutes=5))
     data.guests["a"] = guest(approval=Approval())
-    assert evaluate(data, seen("a"), T0 + timedelta(minutes=6)) == []
+    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=6))) == ["arrived_not_approved"]
     assert not data.presence["a"].counting
     assert data.presence["a"].away_since is None
 
@@ -365,7 +391,7 @@ def test_no_return_when_locked_or_invalid() -> None:
     data = make(guest(approval=Approval(ApprovalKind.UNTIL, until)))
     evaluate(data, seen("a"), T0)
     evaluate(data, seen(), T0 + timedelta(minutes=5))
-    assert evaluate(data, seen("a"), T0 + timedelta(minutes=10)) == []
+    assert types(evaluate(data, seen("a"), T0 + timedelta(minutes=10))) == ["arrived_not_approved"]
     assert not data.presence["a"].counting
 
 

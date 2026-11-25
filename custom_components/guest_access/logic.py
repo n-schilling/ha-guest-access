@@ -18,6 +18,7 @@ from .const import (
     EVENT_APPROVAL_CHANGED,
     EVENT_APPROVAL_EXPIRED,
     EVENT_ARRIVED,
+    EVENT_ARRIVED_NOT_APPROVED,
     EVENT_LEFT,
     EVENT_TIME_UP,
 )
@@ -50,8 +51,12 @@ class Observed:
     # Guest id: one of the guest's trackers is home
     home: Mapping[str, bool]
     residents_home: bool
-    # Areas of lockable rooms whose door is open
+    # Areas of lockable rooms with a door that is open
     open_doors: frozenset[str] = frozenset()
+    # Trackers, residents and door contacts that are unavailable or gone
+    unreachable: frozenset[str] = frozenset()
+    # Guest ids none of whose trackers reports anything: not home, but not known away
+    unseen: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +163,16 @@ def month_minutes(data: AccessData, guest_id: str, now: datetime) -> int:
     return data.months.get(guest_id, {}).get(month_key(now), MonthTotal()).minutes
 
 
+def last_month_minutes(data: AccessData, guest_id: str, now: datetime) -> int:
+    """The minutes of the guest's visits in the month before the current one."""
+    first = dt_util.as_local(now).replace(day=1)
+    return (
+        data.months.get(guest_id, {})
+        .get(month_key(first - timedelta(days=1)), MonthTotal())
+        .minutes
+    )
+
+
 def _arrive(data: AccessData, guest: Guest, presence: Presence, now: datetime) -> Raised:
     if presence.arrived is not None:
         # A visit whose grace time ran out unnoticed ends where the guest left
@@ -195,14 +210,23 @@ def _check_counting(guest: Guest, presence: Presence, now: datetime) -> list[Rai
     return raised
 
 
-def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -> list[Raised]:
+def _evaluate_guest(
+    data: AccessData, guest: Guest, home: bool, now: datetime, seen: bool = True
+) -> list[Raised]:
+    """Apply the rules to one guest; seen: a tracker reports where the guest is."""
     presence = data.presence_of(guest.id)
     locked = guest.approval.kind is ApprovalKind.OFF
+    if not home and seen:
+        # Known to be away: coming home again is a new arrival. Trackers that say
+        # nothing, as after a restart or a dropout, leave it as it was
+        presence.unapproved = False
     if presence.counting:
         if locked:
             # Locked by an administrator: no longer counts, wherever the guest is
             _finish(data, guest, presence, now)
             presence.away_since = None
+            # Still home: the change of the approval said so, this is no arrival
+            presence.unapproved = home
             return []
         if not home:
             return [_leave(guest, presence, now)]
@@ -212,6 +236,8 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         left = presence.away_since
         if left is None and presence.resume_until is not None:
             left = _restarted(data, presence)
+            # Home before the restart and locked since: still home is no arrival
+            presence.unapproved = home
         _finish(data, guest, presence, left or now)
         presence.away_since = None
     resuming = presence.resume_until is not None and now < presence.resume_until
@@ -227,6 +253,7 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
         and presence.arrived is not None
     )
     if home and guest.approval.valid(now):
+        presence.unapproved = False
         if in_grace:
             # Back within the grace time: the same visit goes on, its end stays
             presence.counting = True
@@ -254,6 +281,11 @@ def _evaluate_guest(data: AccessData, guest: Guest, home: bool, now: datetime) -
                     {**Approval().as_dict(), "reason": "visit_over", "by": None},
                 )
             )
+    if home and not presence.unapproved:
+        # A tracker came home and the approval does not let the guest count
+        presence.unapproved = True
+        approval = data.guests[guest.id].approval
+        raised.append(Raised(guest.id, EVENT_ARRIVED_NOT_APPROVED, approval.as_dict()))
     return raised
 
 
@@ -299,6 +331,28 @@ def locked_rooms(data: AccessData) -> frozenset[str]:
     return configured - free_rooms(data) - data.lock.exempt
 
 
+# Why a lockable room is locked or not
+ROOM_LOCKED = "locked"
+ROOM_NO_LOCK = "no_lock"
+ROOM_GUEST_MAY_ENTER = "guest_may_enter"
+ROOM_OPEN_AT_START = "open_at_start"
+
+
+def room_reason(data: AccessData, area_id: str) -> str:
+    """Why the room is locked or free right now.
+
+    A room a guest may enter is free for that reason, also when its door was
+    open when the lock started.
+    """
+    if not data.lock.active:
+        return ROOM_NO_LOCK
+    if area_id in free_rooms(data):
+        return ROOM_GUEST_MAY_ENTER
+    if area_id in data.lock.exempt:
+        return ROOM_OPEN_AT_START
+    return ROOM_LOCKED
+
+
 def _update_lock(data: AccessData, observed: Observed) -> None:
     counting = bool(counting_guests(data))
     resuming = any(data.presence_of(guest_id).resume_until is not None for guest_id in data.guests)
@@ -313,7 +367,15 @@ def evaluate(data: AccessData, observed: Observed, now: datetime) -> list[Raised
     """Apply the rules to the data, in place; return what to raise."""
     raised: list[Raised] = []
     for guest in list(data.guests.values()):
-        raised.extend(_evaluate_guest(data, guest, observed.home.get(guest.id, False), now))
+        raised.extend(
+            _evaluate_guest(
+                data,
+                guest,
+                observed.home.get(guest.id, False),
+                now,
+                guest.id not in observed.unseen,
+            )
+        )
     _update_lock(data, observed)
     prune_log(data, now)
     return raised

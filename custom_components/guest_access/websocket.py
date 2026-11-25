@@ -49,7 +49,7 @@ APPROVAL = {
     probatio.Optional("until"): probatio.Any(None, cv.datetime),
     probatio.Optional("windows", default=[]): [WINDOW],
 }
-ROOM = {probatio.Required("area_id"): cv.string, probatio.Required("door"): cv.entity_id}
+ROOM = {probatio.Required("area_id"): cv.string, probatio.Required("doors"): [cv.entity_id]}
 
 
 @callback
@@ -276,7 +276,9 @@ def ws_save_settings(
     areas = ar.async_get(hass)
     try:
         _check_domain(msg["residents"], "person", "residents")
-        _check_domain([room["door"] for room in msg["rooms"]], "binary_sensor", "doors")
+        _check_domain(
+            [door for room in msg["rooms"] for door in room["doors"]], "binary_sensor", "doors"
+        )
         if unknown := [
             room["area_id"]
             for room in msg["rooms"]
@@ -285,7 +287,7 @@ def ws_save_settings(
             raise ValueError(f"no area {', '.join(unknown)}")
         settings = Settings(
             tuple(dict.fromkeys(msg["residents"])),
-            tuple(Room(room["area_id"], room["door"]) for room in msg["rooms"]),
+            tuple(Room(room["area_id"], tuple(room["doors"])) for room in msg["rooms"]),
             msg.get("resume_minutes", current.resume_minutes),
             msg.get("log_grid_minutes", current.log_grid_minutes),
             msg.get("log_keep_days", current.log_keep_days),

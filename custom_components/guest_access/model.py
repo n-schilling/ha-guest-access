@@ -258,19 +258,30 @@ class Guest:
 
 @dataclass(frozen=True, slots=True)
 class Room:
-    """A lockable room: a Home Assistant area and the contact of its door."""
+    """A lockable room: a Home Assistant area and the contacts of its doors.
+
+    A room with a second entrance or a walk-through room has several doors; any
+    of them opening counts. A door between two lockable rooms belongs to both.
+    """
 
     area_id: str
-    door: str
+    doors: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Reject a room without a door or with a door twice."""
+        if not self.doors:
+            raise ValueError("a lockable room needs a door contact")
+        if len(set(self.doors)) != len(self.doors):
+            raise ValueError("a door contact is in a room only once")
 
     def as_dict(self) -> dict[str, Any]:
         """The room as JSON."""
-        return {"area_id": self.area_id, "door": self.door}
+        return {"area_id": self.area_id, "doors": list(self.doors)}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Room:
         """A room from JSON."""
-        return cls(data["area_id"], data["door"])
+        return cls(data["area_id"], tuple(data["doors"]))
 
 
 def _check_range(name: str, value: int, maximum: int) -> None:
@@ -302,17 +313,14 @@ class Settings:
         return timedelta(minutes=self.log_grid_minutes)
 
     def __post_init__(self) -> None:
-        """Reject a room twice, a door for two rooms or a timing out of range."""
+        """Reject a room twice or a timing out of range."""
         _check_range("the resume time", self.resume_minutes, MAX_RESUME_MINUTES)
         _check_range("the grid of the visit log", self.log_grid_minutes, MAX_LOG_GRID_MINUTES)
         _check_range("the days single visits are kept", self.log_keep_days, MAX_LOG_KEEP_DAYS)
         _check_range("the months totals are kept", self.log_keep_months, MAX_LOG_KEEP_MONTHS)
         areas = [room.area_id for room in self.rooms]
-        doors = [room.door for room in self.rooms]
         if len(set(areas)) != len(areas):
             raise ValueError("an area is a lockable room only once")
-        if len(set(doors)) != len(doors):
-            raise ValueError("a door contact belongs to one room only")
 
     def room(self, area_id: str) -> Room | None:
         """The room of that area, or None."""
@@ -366,6 +374,8 @@ class Presence:
     approval_expired: bool = False
     # After a restart: when Home Assistant started, the latest the guest left
     restarted: datetime | None = None
+    # Home without an approval that lets the guest count, raised already
+    unapproved: bool = False
 
     def end_visit(self) -> None:
         """Forget the visit."""
@@ -388,6 +398,7 @@ class Presence:
             "restarted": _iso_or_none(self.restarted),
             "time_up": self.time_up,
             "approval_expired": self.approval_expired,
+            "unapproved": self.unapproved,
         }
 
     @classmethod
@@ -402,6 +413,7 @@ class Presence:
             restarted=_time_or_none(data.get("restarted")),
             time_up=bool(data.get("time_up", False)),
             approval_expired=bool(data.get("approval_expired", False)),
+            unapproved=bool(data.get("unapproved", False)),
         )
 
 

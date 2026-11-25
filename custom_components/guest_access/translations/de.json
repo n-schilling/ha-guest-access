@@ -33,6 +33,34 @@
       },
       "only_guests_home": {
         "name": "Nur Gäste zuhause"
+      },
+      "approved": {
+        "name": "Freigegeben"
+      },
+      "room_locked": {
+        "name": "{room} gesperrt",
+        "state_attributes": {
+          "area_id": {
+            "name": "Bereichs-ID"
+          },
+          "reason": {
+            "name": "Grund",
+            "state": {
+              "locked": "Gesperrt",
+              "no_lock": "Keine Raumsperre",
+              "guest_may_enter": "Ein Gast darf hinein",
+              "open_at_start": "Tür stand bei Sperrbeginn offen"
+            }
+          }
+        }
+      },
+      "unreachable": {
+        "name": "Nicht erreichbar",
+        "state_attributes": {
+          "entities": {
+            "name": "Entitäten"
+          }
+        }
       }
     },
     "event": {
@@ -45,7 +73,8 @@
               "left": "Gegangen",
               "time_up": "Zeit um",
               "approval_expired": "Freigabe abgelaufen",
-              "approval_changed": "Freigabe geändert"
+              "approval_changed": "Freigabe geändert",
+              "arrived_not_approved": "Ohne Freigabe angekommen"
             }
           },
           "visit_ends": {
@@ -87,7 +116,8 @@
               "left": "Gegangen",
               "time_up": "Zeit um",
               "approval_expired": "Freigabe abgelaufen",
-              "approval_changed": "Freigabe geändert"
+              "approval_changed": "Freigabe geändert",
+              "arrived_not_approved": "Ohne Freigabe angekommen"
             }
           },
           "guest": {
@@ -170,6 +200,15 @@
       },
       "month_hours": {
         "name": "Stunden diesen Monat"
+      },
+      "approval_ends": {
+        "name": "Freigabe endet"
+      },
+      "last_month_hours": {
+        "name": "Stunden letzten Monat"
+      },
+      "guests_count": {
+        "name": "Anzahl Gäste zuhause"
       }
     }
   },
