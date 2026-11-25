@@ -657,6 +657,22 @@ async def _ready(page: Page) -> None:
         await page.locator(f"{PANEL} #sheet ha-card").first.wait_for(timeout=60000)
 
 
+async def _visit_log(api: Api, instance: Instance, guest_id: str) -> dict[str, Any]:
+    """A guest's visit log, as the page loads it for the guest it shows."""
+    async with (
+        asyncio.timeout(WS_SECONDS),
+        api.session.ws_connect(api.base + "/api/websocket") as ws,
+    ):
+        await ws.receive_json()
+        await ws.send_json({"type": "auth", "access_token": instance.token})
+        await ws.receive_json()
+        await ws.send_json({"id": 1, "type": "guest_access/visit_log", "guest_id": guest_id})
+        reply = await ws.receive_json()
+        if not reply.get("success"):
+            raise RuntimeError(f"visit log refused: {reply}")
+        return dict(reply["result"])
+
+
 async def _headlines(page: Page) -> list[str]:
     return [text.strip() for text in await page.locator(f"{ROW} .headline").all_inner_texts()]
 
@@ -1100,8 +1116,8 @@ async def check_page(
         await page.locator(f"{PANEL} #confirm-ok").click()
 
         async def emptied() -> bool:
-            guest = _guest(await _snapshot(api, instance), "g_clean")
-            return guest is not None and not guest["log"]["visits"] and not guest["log"]["months"]
+            log = await _visit_log(api, instance, "g_clean")
+            return not log["visits"] and not log["months"]
 
         await _until(emptied, "an empty visit log")
 
@@ -1211,9 +1227,8 @@ async def check_page(
 
     async def numbers_in_the_language() -> None:
         # A German page writes numbers as elsewhere in German, and takes a comma back
-        anna = _guest(await _snapshot(api, instance), "g_anna")
-        assert anna is not None
-        odd = next((v for v in anna["log"]["visits"][:10] if v["minutes"] % 60), None)
+        log = await _visit_log(api, instance, "g_anna")
+        odd = next((v for v in log["visits"][:10] if v["minutes"] % 60), None)
         await page.evaluate("localStorage.setItem('selectedLanguage', JSON.stringify('de'))")
         try:
             await _goto(page, instance, "guests/list?key=g_anna&view=log")

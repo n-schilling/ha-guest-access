@@ -29,6 +29,7 @@ from custom_components.guest_access.model import AccessData, Approval, ApprovalK
 from .conftest import DOOR, RESIDENT, TRACKER
 
 ACTIVITY = "event.guest_anna_activity"
+GUEST_ACTIVITY = "event.guest_access_guest_activity"
 VIOLATION = "event.guest_access_room_violation"
 GUESTS_HOME = "binary_sensor.guest_access_guests_home"
 # What Home Assistant adds to every event entity; the rest is the event data
@@ -54,6 +55,11 @@ def _event(hass: HomeAssistant, entity_id: str) -> tuple[str, dict[str, Any]]:
     return str(current.attributes["event_type"]), data
 
 
+def _with_guest(event: tuple[str, dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+    """A guest's event as "Guest activity" carries it: with the guest's name and ID."""
+    return event[0], {"guest": "Anna", "guest_id": "anna", **event[1]}
+
+
 async def test_entities(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """Entity IDs, unique IDs and translation keys of the hub and of a guest."""
     registry = er.async_get(hass)
@@ -74,6 +80,7 @@ async def test_entities(hass: HomeAssistant, entry: MockConfigEntry) -> None:
             "guests_home_since",
             True,
         ),
+        "event.guest_access_guest_activity": (f"{hub}_guest_activity", "guest_activity", True),
         "event.guest_access_room_violation": (f"{hub}_room_violation", "room_violation", True),
         "binary_sensor.guest_anna_counts": ("anna_counts", "counts", True),
         "sensor.guest_anna_status": ("anna_status", "status", True),
@@ -101,6 +108,9 @@ async def test_entities(hass: HomeAssistant, entry: MockConfigEntry) -> None:
         "approval_expired",
         "approval_changed",
     ]
+    guest_activity = hass.states.get(GUEST_ACTIVITY)
+    assert guest_activity is not None
+    assert guest_activity.attributes["event_types"] == activity.attributes["event_types"]
     violation = hass.states.get(VIOLATION)
     assert violation is not None
     assert violation.attributes["event_types"] == ["opened"]
@@ -119,6 +129,7 @@ async def test_guest_events(
         "arrived",
         {"visit_ends": ends.replace(microsecond=0).isoformat()},
     )
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
     freezer.tick(timedelta(minutes=61))
     async_fire_time_changed(hass)
@@ -127,6 +138,7 @@ async def test_guest_events(
         "time_up",
         {"visit_ends": ends.replace(microsecond=0).isoformat()},
     )
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
     until = (dt_util.utcnow() + timedelta(minutes=5)).replace(microsecond=0)
     guest = replace(engine.data.guests["anna"], approval=Approval(ApprovalKind.UNTIL, until))
@@ -142,6 +154,7 @@ async def test_guest_events(
             "by": "Admin",
         },
     )
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
     freezer.tick(timedelta(minutes=6))
     async_fire_time_changed(hass)
@@ -150,10 +163,12 @@ async def test_guest_events(
         "approval_expired",
         {"kind": "until", "until": until.isoformat(), "windows": []},
     )
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
     hass.states.async_set(TRACKER, "not_home")
     await hass.async_block_till_done()
     assert _event(hass, ACTIVITY) == ("left", {})
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
 
 async def test_visit_over_event(
@@ -175,6 +190,7 @@ async def test_visit_over_event(
         "approval_changed",
         {"kind": "off", "until": None, "windows": [], "reason": "visit_over", "by": None},
     )
+    assert _event(hass, GUEST_ACTIVITY) == _with_guest(_event(hass, ACTIVITY))
 
 
 async def test_room_violation_and_summary(
@@ -223,6 +239,7 @@ async def test_websocket_commands(hass: HomeAssistant, entry: MockConfigEntry) -
         "guest_access/save_guest",
         "guest_access/delete_guest",
         "guest_access/delete_visits",
+        "guest_access/visit_log",
         "guest_access/lock_guest",
         "guest_access/save_settings",
     }

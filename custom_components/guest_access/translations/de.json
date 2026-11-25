@@ -78,6 +78,54 @@
           }
         }
       },
+      "guest_activity": {
+        "name": "Gästeaktivität",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "arrived": "Angekommen",
+              "left": "Gegangen",
+              "time_up": "Zeit um",
+              "approval_expired": "Freigabe abgelaufen",
+              "approval_changed": "Freigabe geändert"
+            }
+          },
+          "guest": {
+            "name": "Gast"
+          },
+          "guest_id": {
+            "name": "Gast-ID"
+          },
+          "visit_ends": {
+            "name": "Besuchsende"
+          },
+          "kind": {
+            "name": "Freigabe",
+            "state": {
+              "off": "Gesperrt",
+              "once": "Einmalig bis",
+              "until": "Dauerhaft bis",
+              "permanent": "Dauerhaft"
+            }
+          },
+          "until": {
+            "name": "Bis"
+          },
+          "windows": {
+            "name": "Zeitfenster"
+          },
+          "reason": {
+            "name": "Grund",
+            "state": {
+              "changed": "Von einem Administrator geändert",
+              "visit_over": "Besuch vorbei"
+            }
+          },
+          "by": {
+            "name": "Geändert von"
+          }
+        }
+      },
       "room_violation": {
         "name": "Raumverstoß",
         "state_attributes": {

@@ -29,6 +29,7 @@ from .const import (
     WS_SAVE_GUEST,
     WS_SAVE_SETTINGS,
     WS_SUBSCRIBE,
+    WS_VISIT_LOG,
 )
 from .model import Approval, ApprovalKind, Guest, Room, Settings, Window
 
@@ -62,6 +63,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_save_guest,
         ws_delete_guest,
         ws_delete_visits,
+        ws_visit_log,
         ws_lock_guest,
         ws_save_settings,
     ):
@@ -217,6 +219,21 @@ def ws_delete_visits(
         return
     engine.async_delete_visits(msg["guest_id"])
     connection.send_result(msg["id"])
+
+
+@require_admin
+@websocket_command(
+    {probatio.Required("type"): WS_VISIT_LOG, probatio.Required("guest_id"): cv.string}
+)
+@callback
+def ws_visit_log(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+    """Send a guest's visit log: the page loads it for the guest it shows."""
+    if (engine := _engine(hass, connection, msg["id"])) is None:
+        return
+    if engine.guest(msg["guest_id"]) is None:
+        connection.send_error(msg["id"], ERR_NOT_FOUND, f"no guest {msg['guest_id']}")
+        return
+    connection.send_result(msg["id"], engine.visit_log(msg["guest_id"]))
 
 
 @require_admin

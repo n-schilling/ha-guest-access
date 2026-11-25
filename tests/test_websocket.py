@@ -155,6 +155,7 @@ async def test_admin_only(
         {"type": "guest_access/delete_guest", "guest_id": "anna"},
         {"type": "guest_access/save_settings", "residents": [], "rooms": []},
         {"type": "guest_access/delete_visits", "guest_id": "anna"},
+        {"type": "guest_access/visit_log", "guest_id": "anna"},
     ):
         await client.send_json_auto_id(message)
         reply = await client.receive_json()
@@ -174,6 +175,7 @@ async def test_not_loaded(
         {"type": "guest_access/delete_guest", "guest_id": "anna"},
         {"type": "guest_access/save_settings", "residents": [], "rooms": []},
         {"type": "guest_access/delete_visits", "guest_id": "anna"},
+        {"type": "guest_access/visit_log", "guest_id": "anna"},
     ]
     for message in messages:
         await client.send_json_auto_id(message)
@@ -249,7 +251,7 @@ async def test_approval_change_names_admin(
 async def test_visit_log_on_page(
     hass: HomeAssistant, entry: MockConfigEntry, hass_ws_client: WebSocketGenerator
 ) -> None:
-    """The page gets the log and the version; an administrator can delete a guest's log."""
+    """The page gets the version and loads a guest's log; an administrator can delete it."""
     from datetime import timedelta
 
     from homeassistant.util import dt as dt_util
@@ -265,15 +267,22 @@ async def test_visit_log_on_page(
     await client.receive_json()
     first = (await client.receive_json())["event"]
     assert first["about"]["version"]
-    log = first["guests"][0]["log"]
-    assert log["visits"] == [{"start": start.isoformat(), "minutes": 45}]
-    assert log["months"]["2026-11"] == {"visits": 1, "minutes": 45}
+    # The log is not pushed with every change: the page asks for it
+    assert "log" not in first["guests"][0]
 
     async def result() -> dict[str, Any]:
         # The open subscription sends its update next to the result
         while (reply := await client.receive_json())["type"] != "result":
             pass
         return reply
+
+    await client.send_json_auto_id({"type": "guest_access/visit_log", "guest_id": "anna"})
+    log = (await result())["result"]
+    assert log["visits"] == [{"start": start.isoformat(), "minutes": 45}]
+    assert log["months"] == {"2026-11": {"visits": 1, "minutes": 45}}
+    assert log["this_month"] == dt_util.now().strftime("%Y-%m")
+    await client.send_json_auto_id({"type": "guest_access/visit_log", "guest_id": "ghost"})
+    assert (await result())["error"]["code"] == "not_found"
 
     await client.send_json_auto_id({"type": "guest_access/delete_visits", "guest_id": "anna"})
     assert (await result())["success"]

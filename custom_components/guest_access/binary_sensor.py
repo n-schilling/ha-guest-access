@@ -7,11 +7,13 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GuestAccessConfigEntry
+from .const import DOMAIN
 from .engine import GuestEngine
 from .entity import GuestEntity, HubEntity, add_guest_entities
 from .logic import counting_guests
@@ -64,6 +66,23 @@ class GuestsHomeSensor(HubEntity, BinarySensorEntity):
     def __init__(self, engine: GuestEngine) -> None:
         """Initialize the sensor."""
         super().__init__(engine, "guests_home")
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the status sensors too: the guest list names them."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self.hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED, self._status_sensor_changed
+            )
+        )
+
+    @callback
+    def _status_sensor_changed(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        # A new guest's status sensor is registered after the guest is saved, and a
+        # user can give it another entity ID
+        entity = er.async_get(self.hass).async_get(event.data["entity_id"])
+        if entity is not None and entity.platform == DOMAIN and entity.domain == Platform.SENSOR:
+            self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:

@@ -24,7 +24,8 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Add the room violation and the event entity of every guest."""
-    async_add_entities([RoomViolationEvent(entry.runtime_data)])
+    engine = entry.runtime_data
+    async_add_entities([GuestActivityEvent(engine), RoomViolationEvent(engine)])
 
     def _create(engine: GuestEngine, guest_id: str) -> list[Entity]:
         return [GuestEvent(engine, guest_id)]
@@ -67,6 +68,51 @@ class GuestEvent(GuestEntity, EventEntity):
                 self.async_set_context(context)
             self._trigger_event(event_type, data)
             self.async_write_ha_state()
+
+
+class GuestActivityEvent(HubEntity, EventEntity):
+    """The events of every guest in one entity, with the guest in the data.
+
+    One trigger for all guests, also for those added later.
+    """
+
+    # The guest and the administrator are for automations now, not for the history
+    _unrecorded_attributes = frozenset({"guest", "guest_id", "by"})
+
+    _attr_event_types = GUEST_EVENT_TYPES
+
+    def __init__(self, engine: GuestEngine) -> None:
+        """Initialize the entity."""
+        super().__init__(engine, "guest_activity")
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the events of every guest."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self.engine.async_add_guest_event_listener(self._event))
+
+    @callback
+    def _changed(self) -> None:
+        """Only events change this entity."""
+
+    @callback
+    def _event(
+        self,
+        guest_id: str | None,
+        event_type: str,
+        data: dict[str, Any],
+        context: Context | None,
+    ) -> None:
+        guest = None if guest_id is None else self.engine.guest(guest_id)
+        if guest is None or event_type not in GUEST_EVENT_TYPES:
+            return
+        if context is not None:
+            # The logbook shows the administrator who changed the approval
+            self.async_set_context(context)
+        self._trigger_event(
+            event_type,
+            {"guest": self.engine.display_name(guest), "guest_id": guest.id, **data},
+        )
+        self.async_write_ha_state()
 
 
 class RoomViolationEvent(HubEntity, EventEntity):

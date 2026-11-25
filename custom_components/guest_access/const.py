@@ -74,6 +74,7 @@ WS_SUBSCRIBE: Final = f"{DOMAIN}/subscribe"
 WS_SAVE_GUEST: Final = f"{DOMAIN}/save_guest"
 WS_DELETE_GUEST: Final = f"{DOMAIN}/delete_guest"
 WS_DELETE_VISITS: Final = f"{DOMAIN}/delete_visits"
+WS_VISIT_LOG: Final = f"{DOMAIN}/visit_log"
 WS_LOCK_GUEST: Final = f"{DOMAIN}/lock_guest"
 WS_SAVE_SETTINGS: Final = f"{DOMAIN}/save_settings"
 # Sent after every change, for the page

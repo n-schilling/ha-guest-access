@@ -28,6 +28,7 @@ VISIT_ENDS = "sensor.guest_anna_visit_ends"
 STATUS = "sensor.guest_anna_status"
 HOME_SINCE = "sensor.guest_access_guests_home_since"
 ACTIVITY = "event.guest_anna_activity"
+GUEST_ACTIVITY = "event.guest_access_guest_activity"
 VIOLATION = "event.guest_access_room_violation"
 
 
@@ -244,6 +245,35 @@ async def test_new_guest_gets_entities(hass: HomeAssistant, entry: MockConfigEnt
     assert state(hass, "binary_sensor.guest_ben_counts") == STATE_OFF
     assert attr(hass, "event.guest_ben_activity", "event_type") == "approval_changed"
     assert engine.area_name("gone") == "gone"
+
+
+async def test_guest_activity_of_every_guest(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """One event entity carries the events of every guest, also of one added later."""
+    from custom_components.guest_access.model import Approval, ApprovalKind, Guest
+
+    hass.states.async_set(TRACKER, "home")
+    await hass.async_block_till_done()
+    assert attr(hass, GUEST_ACTIVITY, "event_type") == "arrived"
+    assert attr(hass, GUEST_ACTIVITY, "guest") == "Anna"
+    assert attr(hass, GUEST_ACTIVITY, "guest_id") == "anna"
+
+    engine_of(entry).async_save_guest(
+        Guest("ben", "Ben", ("device_tracker.ben",), Approval(ApprovalKind.PERMANENT)),
+        None,
+        "Admin",
+    )
+    await hass.async_block_till_done()
+    assert attr(hass, GUEST_ACTIVITY, "event_type") == "approval_changed"
+    assert attr(hass, GUEST_ACTIVITY, "guest") == "Ben"
+    assert attr(hass, GUEST_ACTIVITY, "by") == "Admin"
+    hass.states.async_set("device_tracker.ben", "home")
+    await hass.async_block_till_done()
+    assert attr(hass, GUEST_ACTIVITY, "event_type") == "arrived"
+    assert attr(hass, GUEST_ACTIVITY, "guest") == "Ben"
+    # The door of a locked room is not a guest's event
+    hass.states.async_set(DOOR, "on")
+    await hass.async_block_till_done()
+    assert attr(hass, GUEST_ACTIVITY, "event_type") == "arrived"
 
 
 async def test_door_contact_back_from_unavailable(
@@ -604,6 +634,28 @@ async def test_guest_list(
     await hass.async_block_till_done()
     assert state(hass, STATUS) == "inactive"
     assert guest_list() == []
+
+
+async def test_guest_list_new_guest(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A guest added later shows in the guest list with its status sensor at once."""
+    from custom_components.guest_access.model import Approval, ApprovalKind, Guest
+
+    engine_of(entry).async_save_guest(
+        Guest("ben", "Ben", ("device_tracker.ben",), Approval(ApprovalKind.PERMANENT))
+    )
+    await hass.async_block_till_done()
+    assert state(hass, "sensor.guest_ben_status") == "away"
+    shown = {item["name"]: item for item in attr(hass, GUESTS_HOME, "guest_list")}
+    assert shown["Ben"]["status"] == "away"
+    assert shown["Ben"]["status_entity"] == "sensor.guest_ben_status"
+
+    # A status sensor given another entity ID shows under it
+    er.async_get(hass).async_update_entity(
+        "sensor.guest_ben_status", new_entity_id="sensor.ben_status"
+    )
+    await hass.async_block_till_done()
+    shown = {item["name"]: item for item in attr(hass, GUESTS_HOME, "guest_list")}
+    assert shown["Ben"]["status_entity"] == "sensor.ben_status"
 
 
 async def test_device_name_reaches_attributes(hass: HomeAssistant, entry: MockConfigEntry) -> None:

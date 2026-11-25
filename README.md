@@ -185,6 +185,7 @@ Each guest is a device with its entities.
 | Per guest | `sensor` "<guest> visit ends" (timestamp; unknown while the guest does not count or the time is unlimited) | dashboards, time triggers |
 | Per guest | `sensor` "<guest> hours this month" (hours of the finished visits this month from the visit log; unknown without a log; disabled by default, see Privacy) | the hours on a dashboard |
 | Per guest | `event` "<guest> activity" with the types `arrived`, `left`, `time_up`, `approval_expired`, `approval_changed` (with `reason` `changed` or `visit_over`, and `by`: the administrator who changed it; the logbook names that user too) | push and log stay in automations |
+| All guests | `event` "Guest activity": the events of every guest in one entity, with the same types and data plus `guest` (name) and `guest_id` | one trigger for all guests, also for those added later |
 | Only guests | `binary_sensor` "Only guests home" (on while guests count and no resident is home) | anything that should behave differently when guests are alone |
 | Summary | `binary_sensor` "Guests home" (presence) with attributes: guests who count, free rooms, locked rooms, and `guest_list` (every guest but inactive ones, by name: `name`, `picture`, `status`, `status_entity`, `visit_ends` while the guest counts with time left or time up) | the one entity automations read to treat guests as home; `guest_list` lets a dashboard list the guests without searching the entity registry |
 | Summary | `sensor` "Guests home since" (timestamp: the earliest arrival of the guests who count; unknown while none counts; a restart or a return within the grace time does not move it) | dashboards showing since when guests are home |
@@ -217,7 +218,7 @@ On the page, area "Setup", pages Residents, Rooms and Timings:
 
 Guest Access stores only the profiles with their notes, the visit in progress, for guests with a visit log the rounded visits, and which images in Home Assistant are guests' photos. It writes nothing about guests to the Home Assistant log.
 
-- The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation and the guests' events are not recorded in the history.
+- The names, rooms, guest list and administrator in the attributes of "Guests home", the room violation, "Guest activity" (there also the guest) and the guests' events are not recorded in the history.
 - A guest's photo is stored and served by Home Assistant like the picture of a person: every user sees it on dashboards, and Home Assistant hands it out without a login to whoever knows its address, which contains a random ID. Because of that Guest Access stores a photo without its metadata (where and when it was taken, the device), at most 1024 pixels wide and high and without its file name. Guest Access deletes only the photos uploaded through it: a replaced or removed photo, the photo of a deleted guest, an upload never saved with a guest (after a day) and all of them when the integration is removed; an image of a person or an area is never taken as a guest's photo nor deleted. The photo's address is not recorded in the history. Leave the photo out if that is too much.
 - A guest's note stays on the page; it is in no entity, attribute, history or diagnostics, only in the store (and so in backups).
 - The sensor "<guest> hours this month" is disabled when it is created: every user can read an entity, while the visit log is meant for administrators. Enable it where you need the hours.
@@ -293,6 +294,26 @@ automation:
           message: "Anna's visit time is up."
 ```
 
+A light for whichever guest arrives, also for guests added later:
+
+```yaml
+automation:
+  - alias: Light when a guest arrives
+    triggers:
+      - trigger: event.received
+        target:
+          entity_id: event.guest_access_guest_activity
+        options:
+          event_type: [arrived]
+    actions:
+      - action: light.turn_on
+        target:
+          entity_id: light.hallway
+      - action: notify.mobile_app_sams_phone
+        data:
+          message: "{{ trigger.to_state.attributes.guest }} has arrived."
+```
+
 Keep the TV off while only guests are home:
 
 ```yaml
@@ -358,6 +379,7 @@ IDs as created in English; Home Assistant takes the entity name in its own langu
 | `binary_sensor.guest_access_guests_home` | `<entry>_guests_home` | `on` while any guest counts |
 | `binary_sensor.guest_access_only_guests_home` | `<entry>_only_guests_home` | `on` while guests count and no resident is home |
 | `sensor.guest_access_guests_home_since` | `<entry>_guests_home_since` | earliest arrival of the guests who count, else unknown |
+| `event.guest_access_guest_activity` | `<entry>_guest_activity` | event types below, for every guest |
 | `event.guest_access_room_violation` | `<entry>_room_violation` | event type `opened` |
 | `binary_sensor.guest_<name>_counts` | `<guest>_counts` | `on` while the guest counts; `entity_picture`: the guest's photo |
 | `sensor.guest_<name>_status` | `<guest>_status` | `counting`, `time_up`, `approval_expired`, `not_approved`, `resuming`, `away`, `inactive`; `entity_picture`: the guest's photo |
@@ -374,6 +396,7 @@ IDs as created in English; Home Assistant takes the entity name in its own langu
 | guest | `time_up` | `visit_ends` |
 | guest | `approval_expired` | `kind`, `until`, `windows`: the approval that no longer applies |
 | guest | `approval_changed` | `kind`, `until`, `windows`: the new approval; `reason`: `changed` (by an administrator) or `visit_over` (a once approval after its visit); `by`: name of the administrator, `null` for `visit_over` |
+| guest activity | every type of a guest | the data of that type, and `guest`: name of the guest, `guest_id`: the guest's ID |
 | room violation | `opened` | `area_id`, `area` (name), `door` (entity ID), `guests`: names of the guests who count |
 
 `kind` is `off`, `once`, `until` or `permanent`; `until` a time or `null`; `windows` a list of `{"weekdays": [0–6, Monday 0], "start": "HH:MM", "end": "HH:MM"}` in local time, an end before the start reaching past midnight. A change by an administrator carries that user's context, so the logbook names them.
@@ -397,6 +420,7 @@ For administrators only; the page uses them, and so can a script with an adminis
 | `guest_access/lock_guest` | `guest_id`; sets the approval to `off` |
 | `guest_access/delete_guest` | `guest_id`; removes the guest with its device and visit log |
 | `guest_access/delete_visits` | `guest_id`; deletes the guest's visit log |
+| `guest_access/visit_log` | `guest_id`; returns the guest's visit log: `visits` (newest first, each with `start` and `minutes`), `months` (per local month `YYYY-MM`: `visits`, `minutes`) and `this_month` (the current local month) |
 | `guest_access/save_settings` | `residents`, `rooms` (`area_id`, `door`), optionally `resume_minutes`, `log_grid_minutes`, `log_keep_days`, `log_keep_months` |
 
 ### Photo upload

@@ -78,6 +78,54 @@
           }
         }
       },
+      "guest_activity": {
+        "name": "Guest activity",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "arrived": "Arrived",
+              "left": "Left",
+              "time_up": "Time up",
+              "approval_expired": "Approval expired",
+              "approval_changed": "Approval changed"
+            }
+          },
+          "guest": {
+            "name": "Guest"
+          },
+          "guest_id": {
+            "name": "Guest ID"
+          },
+          "visit_ends": {
+            "name": "Visit ends"
+          },
+          "kind": {
+            "name": "Approval",
+            "state": {
+              "off": "Locked",
+              "once": "Once until",
+              "until": "Permanent until",
+              "permanent": "Permanent"
+            }
+          },
+          "until": {
+            "name": "Until"
+          },
+          "windows": {
+            "name": "Time windows"
+          },
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "changed": "Changed by an administrator",
+              "visit_over": "Visit over"
+            }
+          },
+          "by": {
+            "name": "Changed by"
+          }
+        }
+      },
       "room_violation": {
         "name": "Room violation",
         "state_attributes": {

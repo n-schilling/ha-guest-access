@@ -89,6 +89,8 @@ class GuestEngine:
         # Per guest id, None for the room violation
         self._event_listeners: dict[str | None, list[EventListener]] = {}
         self._queued: dict[str | None, list[tuple[str, dict[str, Any], Context | None]]] = {}
+        # For the events of every guest
+        self._guest_event_listeners: list[EventListener] = []
         self._unsub_states: CALLBACK_TYPE | None = None
         self._unsub_wake: CALLBACK_TYPE | None = None
         self._unsub_other: list[CALLBACK_TYPE] = []
@@ -219,6 +221,12 @@ class GuestEngine:
 
         return _remove
 
+    @callback
+    def async_add_guest_event_listener(self, listener: EventListener) -> CALLBACK_TYPE:
+        """Call the listener for the events of every guest, as they happen."""
+        self._guest_event_listeners.append(listener)
+        return lambda: self._guest_event_listeners.remove(listener)
+
     def _notify(self) -> None:
         for listener in list(self._listeners):
             listener()
@@ -231,6 +239,9 @@ class GuestEngine:
         data: dict[str, Any],
         context: Context | None = None,
     ) -> None:
+        if guest_id is not None:
+            for listener in list(self._guest_event_listeners):
+                listener(guest_id, event_type, data, context)
         listeners = self._event_listeners.get(guest_id)
         if not listeners:
             queue = self._queued.setdefault(guest_id, [])
@@ -448,11 +459,6 @@ class GuestEngine:
         guests = []
         for guest in self.data.guests.values():
             presence = self.data.presence_of(guest.id)
-            visits = sorted(
-                (visit for visit in self.data.visits if visit.guest_id == guest.id),
-                key=lambda visit: visit.start,
-                reverse=True,
-            )
             guests.append(
                 {
                     **guest.as_dict(),
@@ -463,17 +469,6 @@ class GuestEngine:
                         "status": guest_status(
                             guest, presence, observed.home.get(guest.id, False), now
                         ).value,
-                    },
-                    "log": {
-                        "visits": [
-                            {"start": visit.start.isoformat(), "minutes": visit.minutes}
-                            for visit in visits
-                        ],
-                        "months": {
-                            month: total.as_dict()
-                            for month, total in sorted(self.data.months.get(guest.id, {}).items())
-                        },
-                        "this_month": month_key(now),
                     },
                 }
             )
@@ -487,6 +482,24 @@ class GuestEngine:
                 "free_rooms": sorted(free_rooms(self.data)),
                 "locked_rooms": sorted(locked_rooms(self.data)),
             },
+        }
+
+    def visit_log(self, guest_id: str) -> dict[str, Any]:
+        """A guest's visit log: single visits, newest first, and the monthly totals."""
+        visits = sorted(
+            (visit for visit in self.data.visits if visit.guest_id == guest_id),
+            key=lambda visit: visit.start,
+            reverse=True,
+        )
+        return {
+            "visits": [
+                {"start": visit.start.isoformat(), "minutes": visit.minutes} for visit in visits
+            ],
+            "months": {
+                month: total.as_dict()
+                for month, total in sorted(self.data.months.get(guest_id, {}).items())
+            },
+            "this_month": month_key(dt_util.utcnow()),
         }
 
     # Changes by administrators

@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-11-25
+
+### Added
+
+- "Guest activity" (`event.guest_access_guest_activity`): the events of every guest in one entity, with the same types and data as a guest's own event entity plus `guest` (name) and `guest_id`. One trigger now covers all guests, also those added later; the guest and the administrator are not recorded in the history.
+- WebSocket command `guest_access/visit_log`: a guest's visit log with its single visits and monthly totals, for administrators.
+
+### Changed
+
+- The page loads a guest's visit log only for the guest whose log it shows. The data pushed to open pages after every change no longer carry the visit logs of all guests.
+
+### Fixed
+
+- A guest added on the page appeared in `guest_list` of "Guests home" with `status_entity` empty until something else changed. The attribute now follows the status sensors, also when one is given another entity ID.
+
 ## [0.7.2] - 2026-11-23
 
 ### Changed

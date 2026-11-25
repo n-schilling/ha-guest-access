@@ -504,6 +504,8 @@ if (!customElements.get("guest-access-panel")) {
       super();
       this.attachShadow({ mode: "open" });
       this._data = null;
+      // The visit logs loaded so far, by guest
+      this._logs = {};
       this._page = "list";
       this._key = null;
       this._view = "details";
@@ -644,6 +646,30 @@ if (!customElements.get("guest-access-panel")) {
           if (this.isConnected && this._hass && !this._unsub) this._subscribe();
         }, RETRY_MS);
       });
+    }
+
+    // A guest's visit log, or null until it is there. It is not part of the data
+    // pushed after every change: the page loads it for the guest whose log it
+    // shows, and again once a push says something changed
+    _log(id) {
+      const entry = (this._logs[id] ??= { log: null, stamp: null, loading: false });
+      if (!entry.loading && entry.stamp !== this._stamp) this._loadLog(id, entry);
+      return entry.log;
+    }
+
+    async _loadLog(id, entry) {
+      entry.loading = true;
+      entry.stamp = this._stamp;
+      try {
+        entry.log = await this._hass.callWS({ type: `${DOMAIN}/visit_log`, guest_id: id });
+      } catch {
+        // A guest deleted meanwhile: the next push takes the view away
+        entry.log = null;
+      }
+      entry.loading = false;
+      // Only the log view shows it; elsewhere a redraw could take a typed input
+      if (this._view === "log") this._redraw = true;
+      this._render();
     }
 
     // The refresh button: subscribe again, the data come anew over the WebSocket, no reload
@@ -1202,9 +1228,10 @@ if (!customElements.get("guest-access-panel")) {
       }, { kind: "bool", values: { grid: this._num(settings.log_grid_minutes), days: this._num(settings.log_keep_days), months: this._num(settings.log_keep_months) } });
       const guest = f.id ? this._data.guests.find((g) => g.id === f.id) : null;
       let body = "";
-      if (guest && f.wasLogging && !f.log.log_visits && guest.log.visits.length) body += this._alert("warning", this._t("logOffNote"));
-      if (guest && f.log.log_visits && f.wasLogging) {
-        const log = guest.log;
+      // Loaded for this guest only, and again after every change
+      const log = guest && f.wasLogging ? this._log(guest.id) : null;
+      if (log && !f.log.log_visits && log.visits.length) body += this._alert("warning", this._t("logOffNote"));
+      if (log && f.log.log_visits) {
         const lines = [];
         if (guest.state.counting && guest.state.arrived) {
           const since = new Date(guest.state.arrived);
@@ -1377,7 +1404,8 @@ if (!customElements.get("guest-access-panel")) {
           return;
         case "log-export": {
           const guest = this._data.guests.find((g) => g.id === f?.id);
-          if (guest) this._exportCsv(guest);
+          const log = guest && this._logs[guest.id]?.log;
+          if (log) this._exportCsv(guest, log);
           return;
         }
         case "photo-choose":
@@ -1477,9 +1505,9 @@ if (!customElements.get("guest-access-panel")) {
       return (await response.json()).id;
     }
 
-    _exportCsv(guest) {
+    _exportCsv(guest, log) {
       const rows = [this._t("csvHeader")];
-      for (const visit of [...guest.log.visits].reverse()) {
+      for (const visit of [...log.visits].reverse()) {
         const start = new Date(visit.start);
         const end = new Date(start.getTime() + visit.minutes * 60000);
         const time = (d) => d.toLocaleTimeString(this._lang, { hour: "2-digit", minute: "2-digit" });

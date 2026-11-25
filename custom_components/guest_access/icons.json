@@ -24,6 +24,9 @@
       "activity": {
         "default": "mdi:account-clock"
       },
+      "guest_activity": {
+        "default": "mdi:account-multiple-check"
+      },
       "room_violation": {
         "default": "mdi:door-open"
       }
