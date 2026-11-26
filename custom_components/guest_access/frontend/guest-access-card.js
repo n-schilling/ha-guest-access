@@ -434,9 +434,15 @@
           : more === 0
             ? first.name
             : fill(more === 1 ? t.andOne : t.andMore, { name: first.name, count: more });
-        const ends = data.guests.map((guest) => guest.visit_ends).filter(Boolean).sort();
+        // A time that is up comes before the earliest end still ahead
+        const over = data.guests.some((guest) => guest.status === "time_up");
+        const ends = data.guests
+          .filter((guest) => guest.status !== "time_up")
+          .map((guest) => guest.visit_ends)
+          .filter(Boolean)
+          .sort();
         const summary = c.show_summary || !first ? this._summary(data) : "";
-        const end = c.show_visit_end && ends.length ? fill(t.until, { time: this._time(ends[0]) }) : "";
+        const end = !c.show_visit_end ? "" : over ? t.timeUp : ends.length ? fill(t.until, { time: this._time(ends[0]) }) : "";
         // The second line from most to least: where both do not fit, that only guests
         // are home matters more than the time, the time more than a number of guests
         const lines = [[summary, end].filter(Boolean).join(", ")];

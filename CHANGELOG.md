@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.2] - 2026-11-26
+
+### Fixed
+
+- In one row the card went on showing the end of a visit whose time was already up. It now says "time up", as the larger card does, before the earliest end still ahead.
+
 ## [0.9.1] - 2026-11-26
 
 ### Fixed

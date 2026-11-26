@@ -1044,6 +1044,30 @@ async def check_page(
                 await narrow.evaluate("el => el.scrollWidth <= el.clientWidth"),
                 "a second line that is cut off",
             )
+            # A visit time that is up: the one row says so instead of an end that has passed
+            line = await card_page.evaluate(
+                f"""() => {{
+                  const real = document.querySelector('home-assistant').hass;
+                  const entry = Object.values(real.entities).find(
+                    (e) => e.platform === 'guest_access' && e.translation_key === 'guests_home');
+                  const state = real.states[entry.entity_id];
+                  const list = state.attributes.guest_list.map(
+                    (g) => (g.name === 'Ben' ? {{ ...g, status: 'time_up' }} : g));
+                  const hass = {{ ...real, states: {{ ...real.states, [entry.entity_id]:
+                    {{ ...state, attributes: {{ ...state.attributes, guest_list: list }} }} }} }};
+                  const card = document.createElement('{CARD}');
+                  card.setConfig({{ size: 'small' }});
+                  document.body.appendChild(card);
+                  card.hass = hass;
+                  const text = card.shadowRoot.querySelector('.small .sub').dataset.lines;
+                  card.remove();
+                  return text;
+                }}"""
+            )
+            expect(
+                json.loads(line) == ["2 guests home, time up", "time up"],
+                f"the one row with a visit time that is up: {line}",
+            )
             if shots is not None:
                 await _settle(card_page)
                 await card_page.locator("hui-grid-section").first.screenshot(
