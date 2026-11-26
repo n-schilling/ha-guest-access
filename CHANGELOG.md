@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-11-26
+
 ### Changed
 
 - Removing the integration stops loading the card's script on the pages of Home Assistant at once, no longer only after the next restart. A page that is open keeps the card it loaded.
