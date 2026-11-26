@@ -494,6 +494,67 @@ class Instance:
                 )
                 if not saved["success"]:
                     raise RuntimeError(f"Photo not saved: {saved}")
+        # A dashboard with the card: as it comes, in three sizes, and for the guests
+        card = {"type": f"custom:{CARD}"}
+        created = await api.ws(
+            self.token,
+            {
+                "type": "lovelace/dashboards/create",
+                "url_path": DASHBOARD,
+                "title": "Guests",
+                "mode": "storage",
+            },
+        )
+        if not created["success"]:
+            raise RuntimeError(f"Dashboard not created: {created}")
+        saved = await api.ws(
+            self.token,
+            {
+                "type": "lovelace/config/save",
+                "url_path": DASHBOARD,
+                "config": {
+                    "views": [
+                        {
+                            "path": "large",
+                            "title": "Large",
+                            "cards": [
+                                card,
+                                {
+                                    **card,
+                                    "title": "Visitors",
+                                    "show_status": False,
+                                    "show_unapproved": True,
+                                },
+                            ],
+                        },
+                        {
+                            "path": "sizes",
+                            "title": "Sizes",
+                            "type": "sections",
+                            "sections": [
+                                {
+                                    "type": "grid",
+                                    "cards": [
+                                        {**card, "grid_options": {"columns": 12, "rows": rows}}
+                                        for rows in (1, 3, 6)
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "path": "guest",
+                            "title": "Guest",
+                            "cards": [
+                                {**card, "mode": "guest"},
+                                {**card, "mode": "guest", "other_rooms_text": ""},
+                            ],
+                        },
+                    ]
+                },
+            },
+        )
+        if not saved["success"]:
+            raise RuntimeError(f"Dashboard not saved: {saved}")
         # A user without administrator rights, for the access check
         created = await api.ws(
             self.token,
@@ -570,6 +631,8 @@ def expect(condition: bool, message: str) -> None:
 
 # The page lives in shadow roots; Playwright's CSS selectors pierce them
 PANEL = "guest-access-panel"
+CARD = "guest-access-card"
+DASHBOARD = "guest-cards"
 STAMP = re.compile(r"^As of \d\d:\d\d:\d\d$")
 INTEGRATION_PAGE = "/config/integrations/integration/guest_access"
 VERSION = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))["version"]
@@ -867,6 +930,153 @@ async def check_page(
         "the guests with their state, the room lock in one line, windows not expiry",
         list_shows_guests,
     )
+
+    async def card_at(card_page: Page, view: str) -> Any:
+        await card_page.goto(f"{instance.base}/{DASHBOARD}/{view}")
+        cards = card_page.locator(CARD)
+        await cards.first.locator("ha-card").wait_for(timeout=90000)
+        await card_page.locator("#ha-launch-screen").wait_for(state="detached")
+        return cards
+
+    async def card_for_every_user() -> None:
+        # A user without administrator rights: the card reads entities only
+        card_page = await _open(browser, instance, USER)
+        try:
+            cards = await card_at(card_page, "large")
+            first = cards.nth(0)
+            await first.locator(".row").first.wait_for()
+            names = await first.locator(".row .name").all_inner_texts()
+            expect(names == ["Anna", "Ben"], f"the guests who count: {names}")
+            expect(
+                (await first.locator(".pill").first.inner_text()).strip() == "2 guests home",
+                "the overall state",
+            )
+            expect("until" in await first.locator(".row .end").inner_text(), "Ben's visit end")
+            expect(
+                "No room lock" in await first.locator(".block").inner_text(), "the room lock line"
+            )
+            expect(await first.locator(".status").count() == 2, "a status per guest")
+            expect(await first.locator(".line").count() == 0, "a line that is off by default")
+            expect(
+                await first.locator("button, ha-button, input, select").count() == 0,
+                "the card has something to change",
+            )
+            second = cards.nth(1)
+            expect(
+                (await second.locator(".title").inner_text()).strip() == "Visitors", "the title set"
+            )
+            expect(await second.locator(".status").count() == 0, "a status switched off")
+            expect(
+                "without approval" in await second.locator(".line").inner_text(),
+                "the guests without approval, switched on",
+            )
+            # The card picker knows the card, and its editor has a field for every option
+            offered = await card_page.evaluate(
+                f"""() => {{
+                  const form = customElements.get('{CARD}').getConfigForm();
+                  const names = (schema) => schema.flatMap((f) => f.schema ? names(f.schema) : [f.name]);
+                  return {{
+                    picker: (window.customCards || []).filter((c) => c.type === '{CARD}').length,
+                    fields: names(form.schema),
+                    labels: names(form.schema).map((name) => form.computeLabel({{ name }})),
+                  }};
+                }}"""
+            )
+            expect(offered["picker"] == 1, "the card is not in the card picker once")
+            expect(
+                set(offered["fields"])
+                >= {"mode", "title", "size", "show_summary", "show_unapproved", "other_rooms_text"},
+                f"the editor's fields: {offered['fields']}",
+            )
+            expect(
+                not set(offered["fields"]) & set(offered["labels"]),
+                f"an editor field without its text: {offered['labels']}",
+            )
+            # What does not fit is left out: one row, three rows, six rows
+            cards = await card_at(card_page, "sizes")
+            small, medium, large = cards.nth(0), cards.nth(1), cards.nth(2)
+            await large.locator(".block").wait_for()
+            expect(await small.locator(".small").count() == 1, "one row is not the small card")
+            expect(
+                (await small.locator(".small .name").inner_text()).strip() == "Anna and 1 more",
+                "the small card's guests",
+            )
+            expect(
+                "2 guests home, until" in await small.locator(".small .sub").inner_text(),
+                "the small card's state and visit end",
+            )
+            expect(await medium.locator(".row").count() == 2, "three rows without the guests")
+            expect(await medium.locator(".block").count() == 0, "three rows with the rooms")
+            expect(await medium.locator(".status").count() == 0, "three rows with the status")
+            expect(await large.locator(".status").count() == 2, "six rows without the status")
+            for card in (small, medium, large):
+                fits = await card.locator("ha-card").evaluate(
+                    "el => el.querySelector('.content').getBoundingClientRect().bottom"
+                    " <= el.getBoundingClientRect().bottom + 1"
+                )
+                expect(fits, "a card that cuts off what it shows")
+            if shots is not None:
+                await _settle(card_page)
+                await card_page.locator("hui-grid-section").first.screenshot(
+                    path=str(shots / "card.png")
+                )
+        finally:
+            await _close(card_page)
+
+    await checks.run(
+        "the card shows every user who is visiting, in the size its space allows, nothing to change",
+        card_for_every_user,
+    )
+
+    async def card_welcomes_guests() -> None:
+        async def see(location: str) -> None:
+            await api.post(
+                instance.token,
+                "/api/services/device_tracker/see",
+                {"dev_id": "sam_phone", "location_name": location},
+            )
+
+        card_page = await _open(browser, instance, USER)
+        await see("not_home")
+        try:
+            cards = await card_at(card_page, "guest")
+            first = cards.nth(0)
+            await first.locator(".rooms").first.wait_for()
+            expect(
+                (await first.locator(".hello").inner_text()).strip() == "Welcome, Anna and Ben",
+                "the welcome by name",
+            )
+            visit = await first.locator(".visit").inner_text()
+            expect("Ben: until" in visit and "Anna" not in visit, f"the visit ends: {visit}")
+            open_rooms = (await first.locator(".rooms.open .value").inner_text()).strip()
+            expect(open_rooms == "Office and all other rooms", open_rooms)
+            closed = (await first.locator(".rooms:not(.open) .value").inner_text()).strip()
+            expect(closed == "Bedroom", closed)
+            expect(await first.locator(".status, .pill").count() == 0, "status words for a guest")
+            # The text for the other rooms set to nothing: only the named room
+            other = (await cards.nth(1).locator(".rooms.open .value").inner_text()).strip()
+            expect(other == "Office", other)
+            if shots is not None:
+                await _settle(card_page)
+                await first.locator("ha-card").screenshot(path=str(shots / "card-guest.png"))
+            # The overview says so too, and names the rooms
+            cards = await card_at(card_page, "large")
+            await cards.first.locator(".pill.locked").wait_for()
+            expect(
+                (await cards.first.locator(".pill").first.inner_text()).strip()
+                == "Only guests home",
+                "only guests home on the overview",
+            )
+            chips = await cards.first.locator(".chips .pill").all_inner_texts()
+            expect(
+                [chip.strip() for chip in chips] == ["Bedroom", "Kids room open", "Office free"],
+                f"the rooms: {chips}",
+            )
+        finally:
+            await see("home")
+            await _close(card_page)
+
+    await checks.run("the card welcomes the guests when only they are home", card_welcomes_guests)
 
     async def header_on_every_page() -> None:
         for path, tab in PAGES.items():

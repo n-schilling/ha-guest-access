@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-11-26
+
+### Added
+
+- A dashboard card, "Guest Access" (`custom:guest-access-card`), for every user: it reads entities only and changes nothing. As an overview it shows the overall state, the guests who count with photo, visit end and status, and the room lock; as a welcome (`mode: guest`) it greets the guests by name, with the visit end, the time left, the rooms that are open and the rooms to keep closed. It shows what fits the space it gets, the most important first, and every part can be switched on or off in its editor. The integration loads the card and keeps it in the dashboard resources.
+
 ## [0.8.0] - 2026-11-25
 
 ### Added

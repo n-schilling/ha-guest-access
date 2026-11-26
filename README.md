@@ -6,7 +6,7 @@ A Home Assistant integration to manage guests without making them persons in Hom
 
 Why not simply add a guest as a user or person in Home Assistant? A person simply follows its trackers, with no approval, no end and no time of day, and every automation that looks at persons treats the guest as a resident. A user account on top gives the guest a login to your Home Assistant. Guest Access keeps guests apart from residents: a guest gets no login, counts only while an approval allows it, and loses it at its end or with one tap on the page. Home Assistant can tell "someone is home" from "only guests are home", knows which rooms each guest may enter and how long a visit lasts, and none of this needs a template or a helper.
 
-Guests are managed on a page in the sidebar, for administrators only. No entity can change an approval.
+Guests are managed on a page in the sidebar, for administrators only. No entity can change an approval. A dashboard card shows every user who is visiting, or welcomes the guests themselves.
 
 What it is for, for example:
 
@@ -35,6 +35,12 @@ The setup: the lockable rooms, each an area with its door contacts, and the timi
 <img src="docs/screenshots/rooms.png" alt="Lockable rooms: three areas, each with its door contacts and a button to add another" width="700">
 
 <img src="docs/screenshots/settings.png" alt="Timings: resume time, grid of the visit log, how long visits and totals are kept" width="700">
+
+The dashboard card in three sizes, as its space allows, and as a welcome for the guests:
+
+<img src="docs/screenshots/card.png" alt="The card small, medium and large: guests, visit end, status and the room lock" width="500">
+
+<img src="docs/screenshots/card-guest.png" alt="The card as a welcome: the guests by name, the visit end, rooms that are open and rooms to keep closed" width="500">
 
 The list at phone width in dark mode:
 
@@ -270,6 +276,33 @@ Settings are rows with their explanation behind an (i); one save button shows at
 
 At the end of the header: when the page last got its data ("As of 14:52:40", hidden at phone width), a refresh button that fetches the data again without reloading the page, and a button to Home Assistant's page of the integration. Non-administrators get no page.
 
+### Card
+
+The integration brings a dashboard card, "Guest Access" in the card picker (`custom:guest-access-card`). It is for every user: it reads entities only, changes nothing and shows neither notes, visit logs, time windows nor trackers. It has two views:
+
+| View | For | Shows |
+|---|---|---|
+| Overview (`mode: overview`) | residents | the overall state (nobody visiting, guests home, only guests home), the guests who count with photo and visit end, their status, the room lock with each room locked, free or open, and on request the unreachable sensors and how many guests have no approval |
+| Welcome (`mode: guest`) | the guests, on a wall display | a welcome by name, the visit end with the time left, the rooms that are open and the rooms to keep closed |
+
+The card takes the size of the space it gets. In a sections view it shows what fits, in this order: first the overall state with the guests' names and the earliest visit end (one row), then each guest with the visit end, then the status, the rooms and the optional lines; the welcome leaves out the rooms first, then the second lines. Elsewhere it shows everything that is switched on. `size` sets a size instead: `small`, `medium` or `large`.
+
+Every part can be switched on or off, in the card's editor or in YAML:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `mode` | `overview` | `overview` or `guest` |
+| `title` | "Guests" | the heading of the overview |
+| `size` | `auto` | `auto`, `small`, `medium` or `large` |
+| `show_summary`, `show_guests`, `show_visit_end`, `show_status`, `show_rooms` | on | the parts of the overview |
+| `show_unreachable`, `show_unapproved` | off | a line while a sensor is unreachable; the number of guests without an approval |
+| `show_visit`, `show_guest_rooms` | on | the parts of the welcome |
+| `greeting_text` | "Good to have you here." | the line under the welcome; empty leaves it out |
+| `other_rooms_text` | "all other rooms" | named with the rooms that are open, because Guest Access knows only the lockable rooms; empty leaves it out |
+| `time_up_text` | "Your visit time is up." | shown instead of the visit end once the time is up |
+
+A guest whose tracker is home without an approval is no guest who is visiting: the card leaves it out, as it does a guest who is away. To show the welcome only while guests are alone, give the card a visibility condition on "Only guests home".
+
 ### State
 
 Profiles and the runtime state (approval, last time a tracker was home, deadlines, lock) live in the integration's store, photos in Home Assistant's images, so a restart neither loses nor extends anything. After a restart a guest counts again only once a tracker reports `home`; when that happens within the resume time, the visit goes on with its end and without a new `arrived`, otherwise the guest has left.
@@ -500,7 +533,7 @@ Without the Marketplace, by copying the files yourself. Home Assistant then does
 
 ### Removal
 
-**Settings → Devices & services → Guest Access → ⋮ → Delete** removes the guests, their devices and entities, the visit log and the page. Then remove the integration in the Marketplace and restart. After a fully manual installation, delete the folder `custom_components/guest_access` instead and restart.
+**Settings → Devices & services → Guest Access → ⋮ → Delete** removes the guests, their devices and entities, the visit log, the page and the card's dashboard resource. Then remove the integration in the Marketplace and restart. After a fully manual installation, delete the folder `custom_components/guest_access` instead and restart.
 
 ## Development
 
@@ -511,7 +544,7 @@ scripts/check.sh
 
 `scripts/check.sh` runs what CI runs: ruff, the changelog and translation checks, mypy, the tests with their coverage threshold, the page checks and hassfest in Docker. The page check is not part of CI: run `scripts/check.sh` before a release that changes the page.
 
-The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (Home Assistant's frame with its areas and tabs on every page, the addresses with their query, the setup overview, settings rows with their (i) and the save button, rooms with several door contacts, list, guest views, visit log, lock, rename, photo and note, errors, numbers in German, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
+The page checks start a throwaway Home Assistant with made-up guests, reachable from this machine only, drive the page in a headless browser (the card for a user without administrator rights in its sizes and as a welcome, Home Assistant's frame with its areas and tabs on every page, the addresses with their query, the setup overview, settings rows with their (i) and the save button, rooms with several door contacts, list, guest views, visit log, lock, rename, photo and note, errors, numbers in German, phone width, dark mode, no page for non-administrators) and stop Home Assistant again. They need their own environment:
 
 ```bash
 uv venv --python 3.14 .venv-panel && uv pip install --python .venv-panel/bin/python -r requirements_panel.txt

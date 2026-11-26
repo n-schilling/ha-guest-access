@@ -70,6 +70,8 @@ EVENT_OPENED: Final = "opened"
 # The page in the sidebar, for administrators
 FRONTEND_URL_BASE: Final = "/guest_access_static"
 PANEL_FILENAME: Final = "guest-access-panel.js"
+# The dashboard card, for every user
+CARD_FILENAME: Final = "guest-access-card.js"
 PANEL_URL_PATH: Final = "guest-access"
 PANEL_ELEMENT: Final = "guest-access-panel"
 PANEL_ICON: Final = "mdi:account-key"

@@ -13,7 +13,12 @@ from homeassistant.helpers.storage import Store
 
 from .const import STORAGE_KEY, STORAGE_VERSION
 from .engine import GuestEngine
-from .frontend import async_register_panel, async_unregister_panel
+from .frontend import (
+    async_register_card,
+    async_register_panel,
+    async_remove_card_resource,
+    async_unregister_panel,
+)
 from .issues import async_clear_issues
 from .picture import async_register_picture_view
 from .websocket import async_register_websocket
@@ -26,7 +31,7 @@ type GuestAccessConfigEntry = ConfigEntry[GuestEngine]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry) -> bool:
-    """Load the guests, start watching, add the entities and the page."""
+    """Load the guests, start watching, add the entities, the page and the card."""
     engine = GuestEngine(hass, entry)
     await engine.async_start()
     entry.runtime_data = engine
@@ -34,6 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry) 
         async_register_websocket(hass)
         async_register_picture_view(hass)
         await async_register_panel(hass)
+        await async_register_card(hass)
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:
         # A failed setup is never unloaded: the engine would go on waking and
@@ -53,8 +59,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry) -> None:
-    """Remove the page, the stored guests and their photos with the entry."""
+    """Remove the page, the card's dashboard resource, the stored guests and their photos with the entry."""
     async_unregister_panel(hass)
+    await async_remove_card_resource(hass)
     async_clear_issues(hass)
     store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     try:
