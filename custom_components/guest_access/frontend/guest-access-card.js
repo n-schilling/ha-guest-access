@@ -395,10 +395,19 @@
       // A second line that is cut off gives way to a shorter one
       const line = content.querySelector(".sub[data-lines]");
       if (line) {
+        // Measured beside the line, to the fraction of a pixel: scrollWidth and
+        // clientWidth are whole numbers and call a text that is a hair too wide a fit
+        const probe = document.createElement("span");
+        probe.className = line.className;
+        probe.style.cssText = "position: absolute; visibility: hidden; overflow: visible; width: auto; display: inline-block;";
+        line.parentElement.appendChild(probe);
+        const room = line.getBoundingClientRect().width;
         for (const text of JSON.parse(line.dataset.lines)) {
           line.textContent = text;
-          if (line.scrollWidth <= line.clientWidth) break;
+          probe.textContent = text;
+          if (probe.getBoundingClientRect().width <= room) break;
         }
+        probe.remove();
       }
     }
 

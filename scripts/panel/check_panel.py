@@ -893,6 +893,24 @@ async def _close(page: Page) -> None:
         print(f"note: a browser context did not close within {CLOSE_SECONDS} s")
 
 
+async def _fits(line: Any) -> bool:
+    """Whether a line's text is no wider than the line, to the fraction of a pixel."""
+    return bool(
+        await line.evaluate(
+            """(el) => {
+              const probe = document.createElement('span');
+              probe.className = el.className;
+              probe.style.cssText = 'position:absolute;visibility:hidden;overflow:visible;width:auto;display:inline-block';
+              probe.textContent = el.textContent;
+              el.parentElement.appendChild(probe);
+              const width = probe.getBoundingClientRect().width;
+              probe.remove();
+              return width <= el.getBoundingClientRect().width;
+            }"""
+        )
+    )
+
+
 async def _fab_hidden(page: Page) -> bool:
     return bool(await page.locator(f"{PANEL} ha-button#save").is_hidden())
 
@@ -1040,10 +1058,30 @@ async def check_page(
             narrow = cards.nth(4).locator(".small .sub")
             text = (await narrow.inner_text()).strip()
             expect(text.startswith("until "), f"the narrow card's second line: {text}")
-            expect(
-                await narrow.evaluate("el => el.scrollWidth <= el.clientWidth"),
-                "a second line that is cut off",
+            expect(await _fits(narrow), "a second line that is cut off")
+            # A line a fraction of a pixel too wide is too wide: the box made that narrow
+            hair = await cards.nth(0).evaluate(
+                """(el) => {
+                  const line = el.shadowRoot.querySelector('.small .sub');
+                  const texts = JSON.parse(line.dataset.lines);
+                  const probe = document.createElement('span');
+                  probe.className = line.className;
+                  probe.style.cssText = 'position:absolute;visibility:hidden;overflow:visible;width:auto;display:inline-block';
+                  probe.textContent = texts[0];
+                  line.parentElement.appendChild(probe);
+                  const width = probe.getBoundingClientRect().width;
+                  probe.remove();
+                  // The card's own width leaves the line 0.2 px less than its long text
+                  const spare = line.getBoundingClientRect().width - width;
+                  el.style.width = `${el.getBoundingClientRect().width - spare - 0.2}px`;
+                  el._key = null;
+                  el._render();
+                  const shown = line.isConnected ? line.textContent : el.shadowRoot.querySelector('.small .sub').textContent;
+                  el.style.width = '';
+                  return [texts, shown];
+                }"""
             )
+            expect(hair[1] == hair[0][1], f"a line a hair too wide stays: {hair}")
             # A visit time that is up: the one row says so instead of an end that has passed
             line = await card_page.evaluate(
                 f"""() => {{

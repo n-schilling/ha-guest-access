@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- In one narrow row the card's second line could still be cut off by a fraction of a pixel. The card now measures the text to that fraction before it decides that a line fits.
+
 ## [0.9.2] - 2026-11-26
 
 ### Fixed
