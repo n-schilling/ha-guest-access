@@ -36,11 +36,9 @@ The setup: the lockable rooms, each an area with its door contacts, and the timi
 
 <img src="docs/screenshots/settings.png" alt="Timings: resume time, grid of the visit log, how long visits and totals are kept" width="700">
 
-The dashboard card in three sizes, as its space allows, and as a welcome for the guests:
+The dashboard card for every user, here while only guests are home (more of it under [Card](#card)):
 
-<img src="docs/screenshots/card.png" alt="The card small, medium and large: guests, visit end, status and the room lock" width="500">
-
-<img src="docs/screenshots/card-guest.png" alt="The card as a welcome: the guests by name, the visit end, rooms that are open and rooms to keep closed" width="500">
+<img src="docs/screenshots/card-rooms.png" alt="The card: only guests home, two guests with status and visit end, the room lock with one room locked, one open and one free" width="500">
 
 The list at phone width in dark mode:
 
@@ -285,7 +283,15 @@ The integration brings a dashboard card, "Guest Access" in the card picker (`cus
 | Overview (`mode: overview`) | residents | the overall state (nobody visiting, guests home, only guests home), the guests who count with photo and visit end, their status, the room lock with each room locked, free or open, and on request the unreachable sensors and how many guests have no approval |
 | Welcome (`mode: guest`) | the guests, on a wall display | a welcome by name, the visit end with the time left, the rooms that are open and the rooms to keep closed |
 
-The card takes the size of the space it gets. In a sections view it shows what fits, in this order: first the overall state with the guests' names and the earliest visit end (one row), then each guest with the visit end, then the status, the rooms and the optional lines; the welcome leaves out the rooms first, then the second lines. Elsewhere it shows everything that is switched on. `size` sets a size instead: `small`, `medium` or `large`.
+The card is as high as what it shows. Given fewer rows in a sections view, it shows what fits, in this order: first the overall state with the guests' names and the earliest visit end (one row), then each guest with the visit end, then the status, the rooms and the optional lines; the welcome leaves out the rooms first, then the second lines. Where the one row is narrow as well, its second line keeps the visit end and drops the number of guests. `size` sets a size instead: `small`, `medium` or `large`.
+
+The overview in one row, three rows and six rows:
+
+<img src="docs/screenshots/card.png" alt="The card in one row with the guests' names and the earliest visit end, in three rows with each guest, in six rows with status and room lock" width="500">
+
+The welcome, while only guests are home:
+
+<img src="docs/screenshots/card-guest.png" alt="The card as a welcome: the guests by name, the visit end, rooms that are open and rooms to keep closed" width="500">
 
 Every part can be switched on or off, in the card's editor or in YAML:
 

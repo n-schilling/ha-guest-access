@@ -272,10 +272,11 @@
       return this._config.mode === "guest" ? 6 : 3;
     }
 
+    // As high as what it shows, until someone gives it fewer rows
     getGridOptions() {
       return this._config.mode === "guest"
-        ? { columns: 12, rows: 6, min_columns: 6, min_rows: 3 }
-        : { columns: 6, rows: 3, min_columns: 3, min_rows: 1 };
+        ? { columns: 12, rows: "auto", min_columns: 6, min_rows: 2 }
+        : { columns: 6, rows: "auto", min_columns: 3, min_rows: 1 };
     }
 
     connectedCallback() {
@@ -391,6 +392,14 @@
         // Only a card with a fixed height can be too small for what it shows
         if (!fixed || !overflows) break;
       }
+      // A second line that is cut off gives way to a shorter one
+      const line = content.querySelector(".sub[data-lines]");
+      if (line) {
+        for (const text of JSON.parse(line.dataset.lines)) {
+          line.textContent = text;
+          if (line.scrollWidth <= line.clientWidth) break;
+        }
+      }
     }
 
     _avatar(guest, extra = "") {
@@ -426,14 +435,17 @@
             ? first.name
             : fill(more === 1 ? t.andOne : t.andMore, { name: first.name, count: more });
         const ends = data.guests.map((guest) => guest.visit_ends).filter(Boolean).sort();
-        const parts = [];
-        if (c.show_summary || !first) parts.push(this._summary(data));
-        if (c.show_visit_end && ends.length) parts.push(fill(t.until, { time: this._time(ends[0]) }));
+        const summary = c.show_summary || !first ? this._summary(data) : "";
+        const end = c.show_visit_end && ends.length ? fill(t.until, { time: this._time(ends[0]) }) : "";
+        // The second line from most to least: where both do not fit, that only guests
+        // are home matters more than the time, the time more than a number of guests
+        const lines = [[summary, end].filter(Boolean).join(", ")];
+        if (summary && end) lines.push(data.only ? summary : end);
         const avatar = first && c.show_guests
           ? this._avatar(first)
           : `<div class="avatar idle"><ha-icon icon="mdi:account-group"></ha-icon></div>`;
         return `<div class="small">${avatar}<div class="who"><div class="name">${esc(c.show_guests ? names : title)}</div>` +
-          `<div class="sub">${esc(parts.join(", "))}</div></div></div>`;
+          `<div class="sub" data-lines="${esc(JSON.stringify(lines))}">${esc(lines[0])}</div></div></div>`;
       }
       const large = size === "large";
       let html = `<div class="head"><ha-icon icon="mdi:account-group"></ha-icon><div class="title">${esc(title)}</div>` +

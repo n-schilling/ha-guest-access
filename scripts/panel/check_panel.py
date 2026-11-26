@@ -538,7 +538,16 @@ class Instance:
                                         {**card, "grid_options": {"columns": 12, "rows": rows}}
                                         for rows in (1, 3, 6)
                                     ],
-                                }
+                                },
+                                {
+                                    "type": "grid",
+                                    "cards": [
+                                        # As it comes, half as wide in one row, and the welcome
+                                        card,
+                                        {**card, "grid_options": {"columns": 6, "rows": 1}},
+                                        {**card, "mode": "guest"},
+                                    ],
+                                },
                             ],
                         },
                         {
@@ -1015,6 +1024,26 @@ async def check_page(
                     " <= el.getBoundingClientRect().bottom + 1"
                 )
                 expect(fits, "a card that cuts off what it shows")
+            # Given no rows, a card is as high as what it shows
+            for index, part in ((3, ".block"), (5, ".visit")):
+                plain = cards.nth(index)
+                await plain.locator(part).wait_for()
+                spare = await plain.evaluate(
+                    "el => { const card = el.shadowRoot.querySelector('ha-card');"
+                    " const style = getComputedStyle(card);"
+                    " return card.clientHeight - parseFloat(style.paddingTop)"
+                    " - parseFloat(style.paddingBottom)"
+                    " - card.querySelector('.content').scrollHeight; }"
+                )
+                expect(abs(spare) <= 2, f"a card without rows is {spare} px off its content")
+            # Half as wide, the second line gives up the number of guests, not its end
+            narrow = cards.nth(4).locator(".small .sub")
+            text = (await narrow.inner_text()).strip()
+            expect(text.startswith("until "), f"the narrow card's second line: {text}")
+            expect(
+                await narrow.evaluate("el => el.scrollWidth <= el.clientWidth"),
+                "a second line that is cut off",
+            )
             if shots is not None:
                 await _settle(card_page)
                 await card_page.locator("hui-grid-section").first.screenshot(
@@ -1072,6 +1101,9 @@ async def check_page(
                 [chip.strip() for chip in chips] == ["Bedroom", "Kids room open", "Office free"],
                 f"the rooms: {chips}",
             )
+            if shots is not None:
+                await _settle(card_page)
+                await cards.first.locator("ha-card").screenshot(path=str(shots / "card-rooms.png"))
         finally:
             await see("home")
             await _close(card_page)

@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), the versions
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] - 2026-11-26
+
+### Fixed
+
+- The card took six rows (the welcome) or three (the overview) where a sections view gave it none, and stayed half empty. It is now as high as what it shows, until it is given fewer rows.
+- In one narrow row the card's second line was cut off. It now drops the number of guests and keeps the visit end; while only guests are home it keeps that instead.
+
 ## [0.9.0] - 2026-11-26
 
 ### Added
