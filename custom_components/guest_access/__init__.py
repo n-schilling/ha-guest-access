@@ -17,6 +17,7 @@ from .frontend import (
     async_register_card,
     async_register_panel,
     async_remove_card_resource,
+    async_unload_card,
     async_unregister_panel,
 )
 from .issues import async_clear_issues
@@ -59,8 +60,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry)
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: GuestAccessConfigEntry) -> None:
-    """Remove the page, the card's dashboard resource, the stored guests and their photos with the entry."""
+    """Remove the page, the card's script and dashboard resource, the stored guests and their photos with the entry."""
     async_unregister_panel(hass)
+    async_unload_card(hass)
     await async_remove_card_resource(hass)
     async_clear_issues(hass)
     store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)

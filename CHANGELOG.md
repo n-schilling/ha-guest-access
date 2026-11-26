@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Removing the integration stops loading the card's script on the pages of Home Assistant at once, no longer only after the next restart. A page that is open keeps the card it loaded.
+- The card's texts follow the font size set in Home Assistant: their sizes and weights come from Home Assistant's variables, no longer from fixed pixels. With the default setting the overview looks as before; in the welcome view the labels are 14 px instead of 13 px, the values 16 px instead of 15 px and the greeting 20 px instead of 22 px.
+
 ### Fixed
 
 - In one narrow row the card's second line could still be cut off by a fraction of a pixel. The card now measures the text to that fraction before it decides that a line fits.

@@ -157,8 +157,8 @@
     .content.fill { height: 100%; }
     .head { display: flex; align-items: center; gap: 8px; }
     .head ha-icon { color: var(--secondary-text-color); --mdc-icon-size: 20px; }
-    .title { flex: 1; font-size: 16px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+    .title { flex: 1; font-size: var(--ha-font-size-l); font-weight: var(--ha-font-weight-medium); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pill { font-size: var(--ha-font-size-s); padding: 2px 10px; border-radius: 999px; white-space: nowrap;
       background: rgba(var(--rgb-primary-text-color), 0.06); color: var(--secondary-text-color); }
     .pill.only { background: rgba(var(--rgb-info-color), 0.15); color: var(--info-color); }
     .pill.locked { background: rgba(var(--rgb-error-color), 0.15); color: var(--error-color); }
@@ -166,42 +166,42 @@
     .row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--divider-color); cursor: pointer; }
     .head + .row, .head + .block, .head + .line { margin-top: 10px; }
     .avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
-      font-weight: 500; font-size: 14px; background: rgba(var(--rgb-success-color), 0.15); color: var(--success-color);
+      font-weight: var(--ha-font-weight-medium); font-size: var(--ha-font-size-m); background: rgba(var(--rgb-success-color), 0.15); color: var(--success-color);
       background-size: cover; background-position: center; }
     .who { flex: 1; min-width: 0; }
-    .name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .status { font-size: 12px; color: var(--success-color); }
+    .name { font-size: var(--ha-font-size-m); font-weight: var(--ha-font-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status { font-size: var(--ha-font-size-s); color: var(--success-color); }
     .status.over { color: var(--warning-color); }
-    .end { font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; }
+    .end { font-size: var(--ha-font-size-s); color: var(--secondary-text-color); white-space: nowrap; }
     .end ha-icon { --mdc-icon-size: 14px; margin-right: 2px; }
-    .block { padding-top: 10px; border-top: 1px solid var(--divider-color); font-size: 12px; }
+    .block { padding-top: 10px; border-top: 1px solid var(--divider-color); font-size: var(--ha-font-size-s); }
     .block .label { display: flex; align-items: center; gap: 8px; color: var(--secondary-text-color); }
     .block .label ha-icon { --mdc-icon-size: 16px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .line { padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--divider-color); font-size: 12px; color: var(--secondary-text-color); }
+    .line { padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--divider-color); font-size: var(--ha-font-size-s); color: var(--secondary-text-color); }
     .line.problem { color: var(--warning-color); }
     .line ha-icon { --mdc-icon-size: 16px; margin-right: 6px; }
     .block + .line { margin-top: 10px; }
     .small { display: flex; align-items: center; gap: 10px; height: 100%; }
     .small .avatar { width: 32px; height: 32px; }
     .small .avatar.idle { background: rgba(var(--rgb-primary-text-color), 0.06); color: var(--secondary-text-color); }
-    .small .sub { font-size: 12px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .small .sub { font-size: var(--ha-font-size-s); color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .guest { padding: 10px 6px; }
     .greet { display: flex; align-items: center; gap: 14px; }
-    .greet .avatar { width: 56px; height: 56px; font-size: 20px; background-color: rgba(var(--rgb-info-color), 0.15); color: var(--info-color); }
-    .greet .hello { font-size: 22px; font-weight: 500; line-height: 1.3; }
-    .greet .sub { font-size: 14px; color: var(--secondary-text-color); }
+    .greet .avatar { width: 56px; height: 56px; font-size: var(--ha-font-size-xl); background-color: rgba(var(--rgb-info-color), 0.15); color: var(--info-color); }
+    .greet .hello { font-size: var(--ha-font-size-xl); font-weight: var(--ha-font-weight-medium); line-height: 1.3; }
+    .greet .sub { font-size: var(--ha-font-size-m); color: var(--secondary-text-color); }
     .visit { margin-top: 18px; padding: 14px 16px; border-radius: var(--ha-card-border-radius, 12px); background: rgba(var(--rgb-primary-text-color), 0.05); }
-    .visit .label, .rooms .label { font-size: 13px; color: var(--secondary-text-color); }
-    .visit .big { font-size: 24px; font-weight: 500; line-height: 1.3; }
-    .visit .left { font-size: 13px; color: var(--secondary-text-color); margin-top: 4px; }
-    .visit .each { font-size: 15px; margin-top: 2px; }
+    .visit .label, .rooms .label { font-size: var(--ha-font-size-m); color: var(--secondary-text-color); }
+    .visit .big { font-size: var(--ha-font-size-2xl); font-weight: var(--ha-font-weight-medium); line-height: 1.3; }
+    .visit .left { font-size: var(--ha-font-size-m); color: var(--secondary-text-color); margin-top: 4px; }
+    .visit .each { font-size: var(--ha-font-size-l); margin-top: 2px; }
     .rooms { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--divider-color); }
     .visit + .rooms, .greet + .rooms { margin-top: 14px; }
     .rooms ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
     .rooms.open ha-icon { color: var(--success-color); }
-    .rooms .value { font-size: 15px; }
-    .missing { color: var(--secondary-text-color); font-size: 14px; }
+    .rooms .value { font-size: var(--ha-font-size-l); }
+    .missing { color: var(--secondary-text-color); font-size: var(--ha-font-size-m); }
   `;
 
   class GuestAccessCard extends HTMLElement {

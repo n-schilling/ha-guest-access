@@ -454,7 +454,7 @@ if (!customElements.get("guest-access-panel")) {
     .card-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center;
       padding: 8px 16px; border-top: 1px solid var(--divider-color); }
     .card-actions.solo { border-top: none; }
-    ha-icon-button.help { --mdc-icon-button-size: 32px; --mdc-icon-size: 18px; --ha-icon-button-size: 32px; color: var(--secondary-text-color); flex: none; }
+    ha-icon-button.help { --mdc-icon-size: 18px; --ha-icon-button-size: 32px; color: var(--secondary-text-color); flex: none; }
     ha-tooltip { --max-width: min(360px, 90vw); }
     .alertact { display: flex; align-items: center; gap: 4px; }
     ha-alert { display: block; }

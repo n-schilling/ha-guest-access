@@ -66,6 +66,35 @@ async def test_card_loaded_and_resource_created(
     add_url.assert_not_called()
 
 
+async def test_card_unloaded_with_the_entry_and_loaded_again(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Removing the entry takes the script off the pages; a new entry loads it again."""
+    url = hass.data[DATA_CARD]
+    loaded: set[str] = set()
+    hass.data[DATA_EXTRA_MODULE_URL] = loaded  # type: ignore[assignment]
+    # The frontend came after the first setup: the next one loads the card
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert loaded == {url}
+
+    # Loaded once: a second setup adds nothing to the pages
+    with patch("custom_components.guest_access.frontend.add_extra_js_url") as add_url:
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+    add_url.assert_not_called()
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert loaded == set()
+
+    again = MockConfigEntry(domain=DOMAIN, title=TITLE)
+    again.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(again.entry_id)
+    await hass.async_block_till_done()
+    assert loaded == {url}
+
+
 async def test_card_resource_updated(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """An entry of an earlier version is pointed to this one; a current one is left alone."""
     url = hass.data[DATA_CARD]
